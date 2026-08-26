@@ -14,3 +14,10 @@ export function useBootstrap(): boolean {
 
   return ready;
 }
+
+/** The bootstrap error, if there is one, plus a way to try again. */
+export function useBootstrapError(): { error: string | null; retry: () => void } {
+  const error = useApp((s) => s.error);
+  const retry = useApp((s) => s.retry);
+  return { error, retry: () => void retry() };
+}

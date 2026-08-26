@@ -46,8 +46,17 @@ const LIMITS: Array<{ value: Limitation; label: string }> = [
   { value: "neck", label: "Neck" },
 ];
 
-const sameSet = <T,>(a: readonly T[], b: readonly T[]) =>
-  a.length === b.length && a.every((x) => b.includes(x));
+/**
+ * Set equality, not length-plus-membership.
+ *
+ * This decides whether a changed setup triggers a rebuild, so a false "these
+ * match" leaves plans prescribing equipment that is no longer there.
+ */
+const sameSet = <T,>(a: readonly T[], b: readonly T[]) => {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every((x) => right.has(x));
+};
 
 type KitDraft = {
   setupId: SetupId;

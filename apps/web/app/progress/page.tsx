@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { formatClock } from "@form/core";
 
 import { Display, Kicker, Screen, ScrollArea } from "@/components/ui";
 import { TabBar } from "@/components/ui/nav";
+import { countFinishedSessions } from "@/db/repo";
 import { streakDays, weekProgress } from "@/lib/plan";
 import { useBootstrap } from "@/lib/use-bootstrap";
 import { useNow } from "@/lib/use-now";
@@ -13,8 +15,14 @@ const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
 
 export default function ProgressPage() {
   const ready = useBootstrap();
-  const { sessions, plans, library } = useApp();
+  const { sessions, plans, library, profile } = useApp();
   const now = useNow();
+
+  // The loaded history stops at 100; the lifetime total must not.
+  const [lifetime, setLifetime] = useState<number | null>(null);
+  useEffect(() => {
+    void countFinishedSessions().then(setLifetime);
+  }, [sessions.length]);
 
   const finished = sessions
     .filter((s) => s.endedAt !== null)
@@ -51,11 +59,12 @@ export default function ProgressPage() {
           ))}
         </div>
 
-        <div className="grid grid-cols-3 gap-px bg-white/8">
+        <div className="grid grid-cols-2 gap-px bg-white/8 sm:grid-cols-4">
           {[
             { k: "Streak", v: String(streakDays(sessions, now)) },
-            { k: "Sessions", v: String(totals.sessions) },
+            { k: "Sessions", v: String(lifetime ?? totals.sessions) },
             { k: "Sets", v: String(totals.sets) },
+            { k: "Time", v: `${totals.minutes}m` },
           ].map((stat) => (
             <div key={stat.k} className="bg-screen px-4 py-5">
               <Display size="metric" weight={800} tabular>
@@ -78,17 +87,22 @@ export default function ProgressPage() {
 
         {finished.map((session) => {
           const plan = plans.find((p) => p.id === session.planId);
-          const day = plan?.days[session.dayIndex];
           const logged = session.sets.filter((r) => !r.skipped);
+          // Sessions recorded before day names were snapshotted fall back to
+          // the plan, which is the best guess available for them.
+          const title =
+            session.dayName ?? plan?.days[session.dayIndex]?.name ?? plan?.name ?? "Session";
+          const heaviest = logged.reduce(
+            (kg, r) => Math.max(kg, r.weightKg ?? 0),
+            0
+          );
           const minutes = Math.round(
             Math.max(0, ((session.endedAt ?? session.startedAt) - session.startedAt) / 1000)
           );
           return (
             <div key={session.id} className="border-t border-hair-07 px-[22px] py-[15px]">
               <div className="flex items-baseline justify-between gap-3">
-                <div className="text-[15px] font-semibold tracking-[-.01em]">
-                  {day?.name ?? plan?.name ?? "Session"}
-                </div>
+                <div className="text-[15px] font-semibold tracking-[-.01em]">{title}</div>
                 <div className="shrink-0 text-[12px] text-t4">
                   {new Date(session.startedAt).toLocaleDateString(undefined, {
                     month: "short",
@@ -98,6 +112,13 @@ export default function ProgressPage() {
               </div>
               <div className="mt-[3px] text-[12px] text-t4">
                 {formatClock(minutes)} · {logged.length} sets
+                {heaviest > 0
+                  ? ` · up to ${
+                      profile?.units === "lb"
+                        ? `${Math.round(heaviest * 2.2046226)}lb`
+                        : `${Math.round(heaviest * 2) / 2}kg`
+                    }`
+                  : ""}
                 {session.feel ? ` · felt ${session.feel.replace("-", " ")}` : ""}
               </div>
               {library && logged.length > 0 && (

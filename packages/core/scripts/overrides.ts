@@ -90,9 +90,20 @@ export const OVERRIDES: Record<string, Override> = {
   Single_Leg_Glute_Bridge: {
     cues: ["Keep both hips level throughout", "Push through the heel of the down leg"],
   },
+  // The source ships this one with no instructions at all.
   "One-Arm_Kettlebell_Swings": {
     requires: ["kettlebell"],
     cues: ["Snap the hips, the arm is a rope", "Bell floats to chest height, no higher"],
+    unilateral: true,
+    steps: [
+      "Set the kettlebell on the floor about a foot in front of you.",
+      "Stand with your feet a little wider than your shoulders, toes turned slightly out.",
+      "Hinge at the hips with a flat back and take the handle in one hand.",
+      "Hike the bell back between your legs, keeping your forearm against your inner thigh.",
+      "Snap your hips forward hard and stand tall; let the bell float up to chest height.",
+      "Keep the working arm relaxed like a rope and the free arm out for balance.",
+      "Let the bell fall back between the legs and hinge to meet it, then repeat.",
+    ],
   },
   Romanian_Deadlift: {
     requires: ["barbell"],
@@ -117,8 +128,23 @@ export const OVERRIDES: Record<string, Override> = {
     spaceNeeded: "normal",
     cues: ["Long step, drop the back knee down", "Torso stays tall, no leaning forward"],
   },
+  // The source describes a jumping, leg-swapping version. The cues here are for
+  // the static split squat, which is one leg at a time -- so the prescription
+  // is two sides' worth, because the player runs each side in turn.
   Split_Squats: {
     cues: ["Feet stay in a split the whole set", "Drop straight down, not forward"],
+    unilateral: true,
+    isJumping: false,
+    isLoud: false,
+    defaults: { sets: 2, durationSec: 60, restSec: 45 },
+    steps: [
+      "Step one foot forward into a split stance, about one stride long.",
+      "Set your weight mostly on the front foot with the back heel lifted.",
+      "Stay tall and square; the feet do not move for the whole set.",
+      "Lower straight down by bending both knees until the back knee is just off the floor.",
+      "Keep the front shin close to vertical rather than letting the knee drift forward.",
+      "Drive through the front heel back to the top and repeat.",
+    ],
   },
   Dumbbell_Lunges: {
     requires: ["dumbbells"],
@@ -209,9 +235,20 @@ export const OVERRIDES: Record<string, Override> = {
   Plank: {
     cues: ["Ribs down, glutes squeezed", "Breathe steadily through the hold"],
   },
+  // Another with no source instructions, and the movement most often done
+  // badly: the whole point is the hips, and nobody can see their own.
   Side_Bridge: {
     name: "Side Plank",
     cues: ["Stack the hips, lift them high", "Reach the top arm to the ceiling"],
+    unilateral: true,
+    steps: [
+      "Lie on one side with your legs straight and stacked, one foot on the other.",
+      "Set the bottom elbow directly under the shoulder, forearm flat on the floor.",
+      "Stack your hips and shoulders so your body is in one flat plane.",
+      "Push the bottom forearm down and lift your hips until you are in a straight line.",
+      "Reach the top arm to the ceiling or rest it along your side.",
+      "Keep your neck long and breathe steadily; drop the bottom knee if the hips sag.",
+    ],
   },
   Dead_Bug: {
     cues: ["Lower back glued to the floor", "Move the opposite arm and leg slowly"],

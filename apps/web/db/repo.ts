@@ -1,17 +1,18 @@
+import { z } from "zod";
 import {
   emptyPlan,
   generatePlan,
+  Plan,
+  Profile,
+  Session,
+  Setup,
   type Feel,
   type Goal,
   type Schedule,
   type Library,
-  type Plan,
   type PlanId,
-  type Profile,
-  type Session,
   type SessionId,
   type SetRecord,
-  type Setup,
   type SetupId,
 } from "@form/core";
 
@@ -172,15 +173,23 @@ export async function regenerateSetupPlans(
     return [plan];
   }
 
-  const rebuilt = previous.map((prior) =>
-    generatePlan(library, profile, setup, {
+  const rebuilt = previous.map((prior) => {
+    const next = generatePlan(library, profile, setup, {
       now: now(),
       planId: prior.id,
       goal: prior.goal,
       schedule: prior.schedule,
       name: prior.name,
-    })
-  );
+    });
+    return {
+      ...next,
+      // The situation changed, not the person's history with this plan. Someone
+      // six weeks into a block who buys a kettlebell is still six weeks in, and
+      // the plan was created when it was created.
+      week: prior.week,
+      createdAt: prior.createdAt,
+    };
+  });
   await db.plans.bulkPut(rebuilt);
   return rebuilt;
 }
@@ -273,6 +282,17 @@ export async function listSessions(limit = 100): Promise<Session[]> {
   return db.sessions.orderBy("startedAt").reverse().limit(limit).toArray();
 }
 
+/**
+ * How many sessions there have ever been.
+ *
+ * Counted in the database rather than from the loaded page of history, which
+ * stops at 100 -- a lifetime total that silently stopped moving at 100 is worse
+ * than no total.
+ */
+export async function countFinishedSessions(): Promise<number> {
+  return db.sessions.filter((s) => s.endedAt !== null).count();
+}
+
 export async function getSession(id: SessionId): Promise<Session | undefined> {
   return db.sessions.get(id);
 }
@@ -284,7 +304,8 @@ export async function saveSession(session: Session): Promise<void> {
 export function newSession(
   planId: PlanId,
   setupId: SetupId,
-  dayIndex: number
+  dayIndex: number,
+  dayName: string
 ): Session {
   const t = now();
   return {
@@ -292,6 +313,10 @@ export function newSession(
     planId,
     setupId,
     dayIndex,
+    // Snapshotted, not looked up later: history is a record of what happened,
+    // and reading the name back off the live plan meant renaming a day
+    // retroactively relabelled every session that ever used it.
+    dayName,
     startedAt: t,
     endedAt: null,
     sets: [],
@@ -301,6 +326,30 @@ export function newSession(
   };
 }
 
+/**
+ * Banks what has happened so far, mid-session.
+ *
+ * Called on every phase change, because the sets someone has already done are
+ * not ours to hold in memory: closing the app on the summary screen, or being
+ * killed by the OS mid-workout, must not lose an hour of training
+ * (ENGINEERING.md §1.5).
+ */
+export async function recordSessionProgress(
+  id: SessionId,
+  sets: readonly SetRecord[],
+  endedAt: number | null
+): Promise<void> {
+  const existing = await db.sessions.get(id);
+  if (!existing) return;
+  await db.sessions.put({
+    ...existing,
+    sets: [...sets],
+    endedAt: endedAt ?? existing.endedAt,
+    updatedAt: now(),
+  });
+}
+
+/** Closes a session out. The sets are already banked; this adds how it felt. */
 export async function finishSession(
   id: SessionId,
   sets: SetRecord[],
@@ -312,7 +361,7 @@ export async function finishSession(
     ...existing,
     sets,
     feel,
-    endedAt: now(),
+    endedAt: existing.endedAt ?? now(),
     updatedAt: now(),
   });
 }
@@ -347,6 +396,86 @@ export interface ExportBundle {
   sessions: Session[];
 }
 
+/**
+ * The shape of a backup file, parsed rather than trusted.
+ *
+ * This is the one place a stranger's bytes reach the database, and the database
+ * is someone's entire training history. A cast would let a half-valid file
+ * overwrite it and leave the app crashing on a plan with no days
+ * (ENGINEERING.md §4: boundaries accept `unknown` and Zod-parse).
+ */
+const ImportBundle = z.object({
+  schemaVersion: z.number().int().min(1).optional(),
+  exportedAt: z.number().int().optional(),
+  profile: Profile.optional().nullable(),
+  setups: z.array(Setup),
+  plans: z.array(Plan),
+  sessions: z.array(Session),
+});
+
+export class ImportError extends Error {}
+
+/**
+ * Brings a bundle up to the current shape before it is written.
+ *
+ * A backup taken at v1 has plans with no goal and no schedule. Restoring it
+ * into a v2 database never runs the Dexie upgrade -- that only fires when the
+ * database version changes -- so the backfill has to happen here too, or the
+ * restore reintroduces exactly the bug the migration exists to fix.
+ */
+function migrateBundle(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null) {
+    throw new ImportError("That file is not a FORM backup.");
+  }
+  const bundle = { ...(raw as Record<string, unknown>) };
+  const version = typeof bundle["schemaVersion"] === "number" ? bundle["schemaVersion"] : 1;
+
+  if (version > SCHEMA_VERSION) {
+    throw new ImportError(
+      "That backup was made by a newer version of FORM. Update the app, then import it."
+    );
+  }
+
+  if (version < 2 && Array.isArray(bundle["plans"])) {
+    bundle["plans"] = bundle["plans"].map((p) => {
+      if (typeof p !== "object" || p === null) return p;
+      const plan = { ...(p as Record<string, unknown>) };
+      if (!plan["schedule"]) {
+        plan["schedule"] = {
+          daysPerWeek: Math.min(7, Math.max(1, (plan["days"] as unknown[])?.length ?? 3)),
+          minutesPerSession: 30,
+        };
+      }
+      if (!plan["goal"]) plan["goal"] = "general";
+      return plan;
+    });
+  }
+
+  return bundle;
+}
+
+/** Parses a backup file, or explains why it cannot be read. Never writes. */
+export function parseBundle(raw: unknown): ExportBundle {
+  const parsed = ImportBundle.safeParse(migrateBundle(raw));
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const where = issue?.path.join(".");
+    throw new ImportError(
+      where
+        ? `That backup could not be read: ${where} is not what we expected.`
+        : "That backup could not be read."
+    );
+  }
+  return {
+    schemaVersion: parsed.data.schemaVersion ?? SCHEMA_VERSION,
+    exportedAt: parsed.data.exportedAt ?? now(),
+    profile: parsed.data.profile ?? undefined,
+    setups: parsed.data.setups,
+    plans: parsed.data.plans,
+    sessions: parsed.data.sessions,
+  };
+}
+
 /** A lost phone should not be a lost training history. */
 export async function exportAll(): Promise<ExportBundle> {
   return {
@@ -359,11 +488,17 @@ export async function exportAll(): Promise<ExportBundle> {
   };
 }
 
-export async function importAll(bundle: ExportBundle): Promise<void> {
+/**
+ * Restores a backup. Takes `unknown` on purpose: callers hand us whatever was
+ * in the file, and nothing reaches the database until it has been parsed.
+ */
+export async function importAll(raw: unknown): Promise<ExportBundle> {
+  const bundle = parseBundle(raw);
   await db.transaction("rw", db.profile, db.setups, db.plans, db.sessions, async () => {
     if (bundle.profile) await saveProfile(bundle.profile);
     await db.setups.bulkPut(bundle.setups);
     await db.plans.bulkPut(bundle.plans);
     await db.sessions.bulkPut(bundle.sessions);
   });
+  return bundle;
 }

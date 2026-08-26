@@ -1,0 +1,66 @@
+# The gates from ENGINEERING.md §12, run on every push.
+#
+# They existed as scripts long before they ran anywhere, which is how a plan
+# could ship handing someone 31 minutes of a 75-minute request with a green
+# local checkout. A gate nothing runs is a convention.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push supersedes the run it interrupted; nobody needs the old answer.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  # Gates merges rather than running nightly: it is the path a real person
+  # walks, it takes about a minute, and a critical path that breaks silently
+  # until morning is a critical path nobody trusts.
+  e2e:
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Resolve the Playwright version for the cache key
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: browsers
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - run: npx playwright install --with-deps chromium
+        if: steps.browsers.outputs.cache-hit != 'true'
+      - run: npx playwright install-deps chromium
+        if: steps.browsers.outputs.cache-hit == 'true'
+
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/test-results/
+          retention-days: 7

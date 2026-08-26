@@ -3,7 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import type { SetupId } from "@form/core";
 
-import { Screen } from "@/components/ui";
+import { Loading, NotFound, Screen } from "@/components/ui";
 import { SetupEditor } from "@/components/setup-editor";
 import { deleteSetup } from "@/db/repo";
 import { useBootstrap } from "@/lib/use-bootstrap";
@@ -13,17 +13,19 @@ export default function EditSetupPage() {
   const ready = useBootstrap();
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const { setups, upsertSetup, regenerateForSetup, refresh } = useApp();
+  const { setups, plans, upsertSetup, regenerateForSetup, refresh } = useApp();
 
   const setup = setups.find((s) => s.id === (params.id as SetupId));
 
-  if (!ready || !setup) {
+  if (!ready) return <Loading />;
+  if (!setup) {
     return (
-      <Screen>
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-[13px] text-t4">Loading…</div>
-        </div>
-      </Screen>
+      <NotFound
+        title="That setup is gone"
+        body="It may have been deleted on this device."
+        href="/setups"
+        label="Back to your setups"
+      />
     );
   }
 
@@ -31,6 +33,7 @@ export default function EditSetupPage() {
     <Screen>
       <SetupEditor
         initial={setup}
+        planCount={plans.filter((p) => p.setupId === setup.id).length}
         onCancel={() => router.back()}
         onSave={async (next) => {
           const saved = await upsertSetup(next);

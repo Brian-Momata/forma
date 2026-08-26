@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Archivo, Instrument_Sans } from "next/font/google";
+import { AudioUnlock } from "@/components/audio-unlock";
 import { ServiceWorkerRegistrar } from "@/components/service-worker";
 import { ThemeSync } from "@/components/theme-sync";
 import "./globals.css";
@@ -34,8 +35,10 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // Zoom stays available: blocking it fails WCAG 1.4.4, and it bites hardest on
+  // the small uppercase labels §10 already flags as low contrast. The
+  // double-tap-zoom problem this usually guards against is handled by the
+  // tap-highlight and touch rules in globals.css.
   viewportFit: "cover",
   themeColor: "#08090B",
 };
@@ -48,6 +51,7 @@ export default function RootLayout({
       <body>
         <ThemeSync />
         <ServiceWorkerRegistrar />
+        <AudioUnlock />
         {children}
       </body>
     </html>

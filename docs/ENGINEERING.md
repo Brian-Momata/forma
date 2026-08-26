@@ -30,6 +30,13 @@ that is a barbell plan with the barbells removed is a bad plan.
 | `home-gym` | Barbell compounds, limited accessories | Load |
 | `full-gym` | Barbell + machine accessories, lower reps | Load |
 
+"Load" is a number, not a slogan: `Prescription.targetWeightKg` holds it, the set screen
+logs what was actually lifted, and `applyFeedback` raises it from there. Weight is stored
+in kilograms always — the profile's `units` is a display choice and never a storage one.
+Until something has been logged, a load tier progresses by reps and the Complete screen
+says so, because promising "more weight next week" with no number behind it is a lie the
+app cannot act on.
+
 ---
 
 ## 1. Principles
@@ -74,8 +81,15 @@ workout/
   No React. No DOM types. No Dexie. No Next. No `node:` builtins in shipped code.
 - `apps/web` imports `@form/core` freely. Core never imports web.
 
-Enforced by ESLint `no-restricted-imports` and a `dependency-cruiser` rule that fails
-CI. This is a gate, not a convention.
+Enforced twice, and both run in CI (`.github/workflows/ci.yml`):
+
+- ESLint `no-restricted-imports` in `packages/core/eslint.config.mjs`, so it fails in
+  the editor.
+- `packages/core/test/boundaries.test.ts`, which scans the source. It catches what a
+  lint rule cannot: `Date.now`, `setInterval` and `setTimeout` anywhere in the domain
+  (§3), including inside a file that imports nothing.
+
+This is a gate, not a convention.
 
 **Why this is worth the discipline:** it makes the eventual React Native port a copy
 rather than a rewrite, and it lets the entire domain be tested with zero mocks. Every
@@ -137,8 +151,19 @@ The React layer owns the interval, and it is the only place that may read the cl
 
 - **Zod schemas are the source of truth.** TypeScript types come from `z.infer`.
   Never hand-write a type that a schema already describes.
-- Every persisted record carries `id`, `createdAt`, `updatedAt`, `schemaVersion`.
-- **Dexie migrations are additive.** Never delete or repurpose a field in place.
+- Every persisted record carries `id`, `createdAt` and `updatedAt`.
+- **The schema version is per database, not per record.** Dexie owns it, and
+  `SCHEMA_VERSION` in `db/schema.ts` is the single source of truth. Records do not carry
+  their own version because nothing would read it: every row in an IndexedDB database is
+  migrated together, on open, before any of it is handed out.
+  The one place a version genuinely travels with the data is an export bundle, which
+  carries `schemaVersion` and is migrated by `parseBundle` on the way in — the Dexie
+  upgrade never fires for an import, so that path backfills separately.
+- **Dexie migrations are additive.** Never delete or repurpose a field in place. A new
+  optional field needs no version bump; a new *meaning* for an existing one always does.
+- **Restoring a backup is a migration too.** `importAll` takes `unknown`, Zod-parses it,
+  and runs the same backfills, because the Dexie upgrade hook only fires on a version
+  change and a restored v1 bundle would otherwise walk straight past it.
 - **Every migration ships with a test** that runs it against a fixture database built
   at the previous version and asserts nothing was lost.
 - **Never persist derived values.** Plan duration, streak, weekly volume, and total sets
@@ -203,8 +228,13 @@ runtime. **None of it ships.**
 | Layer | Approach | Depth |
 |---|---|---|
 | `packages/core` | Vitest unit + **property-based** (fast-check) | Heavy — correctness lives here |
-| `apps/web/db` | Repository + migration tests on `fake-indexeddb` | Medium |
+| `apps/web/db` | Repository, migration and **import** tests on `fake-indexeddb` | Medium |
+| `apps/web/lib` | Vitest unit, for the pure helpers between storage and screens | Medium |
 | UI | Playwright, critical path only | Light |
+
+`apps/web/lib` earns tests because it is not glue: session rotation, streak arithmetic
+and day resolution are real logic that happens to live in the app rather than the core,
+and every one of them has had a bug. Anything in there that *is* glue stays untested.
 
 **We do not write shallow component tests.** They assert that the code is the code.
 Test the domain properly and smoke-test the path a real person walks.
@@ -214,7 +244,15 @@ over arbitrary valid inputs and let fast-check find the edge cases we wouldn't t
 
 > For any valid `(profile, setup)`, the generated plan contains no contraindicated
 > exercise, no exercise requiring unavailable equipment, no expert movement for a
-> beginner, fills every required pattern slot, and fits its time budget.
+> beginner, fills every required pattern slot, never repeats a movement inside a
+> session, and never overruns its time budget.
+
+**The time budget is a ceiling, not a quota.** Overrunning it is a bug; not filling it
+is often correct — a beginner's volume is capped by safety rule 5, and a pool thinned by
+a tight room and three limitations runs out of movements before it runs out of minutes.
+So it is asserted as three properties rather than a percentage: it never overruns, more
+time never yields less training, and the fitter never leaves room for another set it
+could have added.
 
 **Plan generation must stay reproducible.** The same answers give the same plan,
 so the plan id must never feed the generator's seed. It is tempting (it makes a
@@ -240,9 +278,19 @@ configurable and not overridable by a template.
    no `noJumping` constraint.
 5. Beginner training volume is capped regardless of what the archetype requests.
 6. Mobility sessions never contain plyometrics or maximal loading.
-7. A medical disclaimer is shown during onboarding and acknowledged before the first session.
+7. A medical disclaimer is shown during onboarding and acknowledged before the first
+   session. Enforced, not merely recorded: `disclaimerAcceptedAt` gates
+   `/workout/[id]`, which redirects to onboarding when it is null.
 
 **When two rules conflict, the more conservative one wins.**
+
+**One-sided movements are trained on both sides.** A timed set of a `unilateral`
+exercise is halved and run once per side with a `switch` phase between, so the clock
+cannot run out on the left leg and move the session on. The prescription is therefore
+*both sides' worth* -- a 60s side plank is 30s a side -- and the library asserts it.
+Alternating movements (walking lunges, marching bridges) are not `unilateral`: they
+already train both sides inside the set. Rep sets are never split, because the person
+ends them; the screen says "each side" instead.
 
 ### What these rules do and do not govern
 
@@ -262,17 +310,35 @@ unaffected, and are still asserted as properties.
 
 - **Timers announce at meaningful intervals** — halfway, ten seconds, done — via
   `aria-live="polite"`. Announcing every second is unusable with a screen reader.
-- The end-of-set tone always has a visual equivalent. The design's "TONE" burst already
-  does this well; keep it.
+- **Every phase change has a tone, and every tone has a visual equivalent.** The tone is
+  chosen from *why* the machine moved (`ChimeKind`), not from the phase it landed in --
+  a set ending, an exercise ending and "change sides" are three different instructions,
+  and someone with the phone in a pocket has only the sound to tell them apart. The
+  design's burst carries the visual half; it is a mark, not the word "TONE", because
+  nobody needs to be told a sound is playing while it is playing.
+- **Audio is unlocked from a real gesture.** iOS will not resume an `AudioContext`
+  outside a gesture handler, and an effect that runs after a tap has already left it.
+  `AudioUnlock` is mounted at the root and listens for the first pointer or key event
+  anywhere in the app. Without it every timed phase passes in silence while rep sets --
+  whose tone fires from a click -- sound fine, which is exactly how the bug hid.
 - Touch targets ≥44px. The design's 56–60px buttons pass comfortably.
 - Respect `prefers-reduced-motion` for all five keyframes.
 - Full keyboard operability, including the player controls.
 
-**Known contrast issue, tracked:** the dim label tier `#5B606B` on the `#08090B` screen
-background computes to roughly **3.1:1** — below the 4.5:1 AA threshold — and it is used
-on small uppercase labels throughout (section headers, stat captions). Resolution is
-pending a product decision: lighten the token, or keep the design as drawn and ship a
-high-contrast toggle. Until it is resolved, do not propagate this pairing to new surfaces.
+- **Zoom is never disabled.** No `maximum-scale`, no `user-scalable=no`. Blocking pinch
+  zoom fails WCAG 1.4.4, and it bites hardest on the low-contrast labels below.
+- The exercise picker is a real `<dialog>` opened with `showModal()`, so it gets a focus
+  trap, Escape, and an inert background. A sheet that looks modal must behave modally.
+- **Timers announce at halfway, ten seconds, and on the phase changing** — not at zero.
+  The machine advances within 200ms of a countdown reaching zero, so a live region
+  rendered at zero unmounts before a screen reader reaches it.
+
+**Known contrast issue, resolved as a toggle:** the dim label tier `#5B606B` on the
+`#08090B` screen background computes to roughly **3.1:1** — below the 4.5:1 AA threshold —
+and it is used on small uppercase labels throughout. The design is kept as drawn and
+`data-contrast="high"` lifts the three dimmest tiers for anyone who needs it
+(`globals.css`, wired to the profile's `highContrast`). Do not propagate the raw pairing
+to new surfaces; use the tokens, which respond to the toggle.
 
 ---
 
@@ -281,6 +347,10 @@ high-contrast toggle. Until it is resolved, do not propagate this pairing to new
 - **The active-workout screen must not re-render the tree every second.** The timer lives
   in an isolated leaf component subscribed via a Zustand selector. This is the single
   most important performance rule in the app.
+  The trap is subtle: a `useRemaining()`-style hook is only a leaf if it is *called* from
+  one. Calling it in the phase component re-renders the whole phase — media, cues and all
+  — several times a second, which is exactly what the leaves exist to prevent. See
+  `app/workout/[id]/phases.tsx`.
 - Initial JS < 200KB gzipped.
 - The exercise library lazy-loads; it is never in the main bundle.
 - Chime animation holds 60fps on a mid-range Android.

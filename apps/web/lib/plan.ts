@@ -7,26 +7,62 @@ import {
   type Session,
 } from "@form/core";
 
-/** Flattens a plan day into the player's input. */
-export function resolveDay(library: Library, day: PlanDay): PlayerItem[] {
-  return day.exercises.flatMap((item): PlayerItem[] => {
+/** Equipment that a movement is loaded with, so the player can offer a weight. */
+const LOADABLE: ReadonlySet<string> = new Set([
+  "dumbbells",
+  "barbell",
+  "kettlebell",
+  "ez-bar",
+  "cable",
+  "machines",
+  "medicine-ball",
+]);
+
+/**
+ * Flattens a plan day into the player's input.
+ *
+ * Items whose exercise is missing from the library are dropped -- the player
+ * cannot run a movement it knows nothing about -- but they are reported rather
+ * than swallowed, so the plan screen can show the same session the player will
+ * actually run instead of counting work that silently vanishes.
+ */
+export function resolveDay(
+  library: Library,
+  day: PlanDay
+): { items: PlayerItem[]; unresolved: string[] } {
+  const items: PlayerItem[] = [];
+  const unresolved: string[] = [];
+
+  for (const item of day.exercises) {
     const exercise = library.byId(item.exerciseId);
-    if (!exercise) return [];
-    return [
-      {
-        exerciseId: exercise.id,
-        name: exercise.name,
-        kind: exercise.kind,
-        sets: item.prescription.sets,
-        reps: item.prescription.reps ?? null,
-        durationSec: item.prescription.durationSec ?? null,
-        restSec: item.prescription.restSec,
-        warmup: item.warmup,
-        cues: exercise.cues,
-        images: exercise.images,
-      },
-    ];
-  });
+    if (!exercise) {
+      unresolved.push(item.exerciseId);
+      continue;
+    }
+    items.push({
+      exerciseId: exercise.id,
+      name: exercise.name,
+      kind: exercise.kind,
+      sets: item.prescription.sets,
+      reps: item.prescription.reps ?? null,
+      durationSec: item.prescription.durationSec ?? null,
+      restSec: item.prescription.restSec,
+      warmup: item.warmup,
+      cues: exercise.cues,
+      steps: exercise.steps,
+      images: exercise.images,
+      unilateral: exercise.unilateral,
+      loadable: !item.warmup && exercise.requires.some((r) => LOADABLE.has(r)),
+      targetWeightKg: item.prescription.targetWeightKg ?? null,
+    });
+  }
+
+  return { items, unresolved };
+}
+
+/** Whether every movement in a day can still be resolved to a real exercise. */
+export function isRunnable(library: Library, day: PlanDay): boolean {
+  return day.exercises.every((e) => library.byId(e.exerciseId) !== undefined);
 }
 
 export function dayMinutes(day: PlanDay): number {
@@ -39,6 +75,27 @@ export interface DaySummary {
   minutes: number;
   exercises: number;
   sets: number;
+}
+
+const WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+
+/** The day's advisory slot in the week, or null when it has none. */
+export function weekdayLabel(day: PlanDay): string | null {
+  if (day.weekday === null) return null;
+  return WEEKDAY_NAMES[day.weekday] ?? null;
+}
+
+/**
+ * The days after today, in the order they come round.
+ *
+ * Rotation order, not array order: on day four of a five-day plan the next
+ * sessions are day five and day one, not days one and two.
+ */
+export function upcomingDays(days: DaySummary[], todayIndex: number, count = 2): DaySummary[] {
+  if (days.length <= 1) return [];
+  return Array.from({ length: Math.min(count, days.length - 1) }, (_, i) => {
+    return days[(todayIndex + i + 1) % days.length]!;
+  });
 }
 
 export function summarise(plan: Plan): DaySummary[] {
@@ -66,11 +123,19 @@ export function nextDayIndex(plan: Plan, sessions: readonly Session[]): number {
   return plan.days.length === 0 ? 0 : done % plan.days.length;
 }
 
+/**
+ * A local calendar day, as a number you can do arithmetic on.
+ *
+ * Counted in days since the epoch by civil date rather than by dividing a
+ * timestamp: local midnight is not a whole number of days from UTC midnight,
+ * and the offset moves twice a year, so the divide-and-floor version quietly
+ * merged or skipped a day at every daylight-saving boundary.
+ */
 const DAY_MS = 86_400_000;
 
 function dayStamp(ms: number): number {
   const d = new Date(ms);
-  return Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / DAY_MS);
+  return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY_MS);
 }
 
 /** Consecutive days with a finished session, counting back from today. */

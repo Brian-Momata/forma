@@ -139,6 +139,15 @@ export const Prescription = z.object({
   reps: z.number().int().min(1).max(100).optional(),
   durationSec: z.number().int().min(5).max(600).optional(),
   restSec: z.number().int().min(0).max(300),
+  /**
+   * What to load the bar with, in kilograms, once we know.
+   *
+   * Null until the person has logged a weight for the movement: on the load
+   * tiers this is the whole progression, and without somewhere to put a number
+   * "add weight next week" is advice the app cannot act on. Always kilograms;
+   * the profile's unit is a display choice, never a storage one.
+   */
+  targetWeightKg: z.number().min(0).max(500).nullable().optional(),
 });
 export type Prescription = z.infer<typeof Prescription>;
 
@@ -170,10 +179,32 @@ export const Exercise = z.object({
    */
   dynamic: z.boolean(),
   spaceNeeded: z.enum(["tight", "normal"]),
+  /**
+   * Worked one side at a time.
+   *
+   * Alternating movements -- walking lunges, marching bridges -- are false:
+   * they already train both sides inside a set, and pausing them to "switch
+   * sides" would be nonsense. True means the player owes the person a switch.
+   */
   unilateral: z.boolean(),
 
   /** The design shows exactly two. Long-tail entries fall back to condensed source text. */
   cues: z.array(z.string().min(1)),
+
+  /**
+   * The full how-to, one instruction per step, in order.
+   *
+   * Two short cues are enough to remind someone of a movement they know; they
+   * are not enough to teach one. The demo photos are two frames of a range of
+   * motion and cannot show tempo, breathing, or what "keep the legs straight"
+   * is protecting -- so the steps carry the actual form, and the cues stay
+   * what they were: the two things to remember mid-set.
+   *
+   * Defaulted rather than required so a library built before this existed
+   * still parses.
+   */
+  steps: z.array(z.string().min(1)).default([]),
+
   images: z.array(z.string()),
 
   /**
@@ -222,7 +253,12 @@ export type Setup = z.infer<typeof Setup>;
 
 export const Schedule = z.object({
   daysPerWeek: z.number().int().min(1).max(7),
-  minutesPerSession: z.number().int().min(5).max(180),
+  /**
+   * Ten minutes is the floor because it is the shortest session the generator
+   * can fit honestly: below that the warm-up alone overruns the budget, and a
+   * warm-up is not the thing to cut (safety rule 3).
+   */
+  minutesPerSession: z.number().int().min(10).max(180),
 });
 export type Schedule = z.infer<typeof Schedule>;
 
@@ -307,6 +343,14 @@ export const Session = z.object({
   planId: PlanId,
   setupId: SetupId,
   dayIndex: z.number().int().min(0),
+  /**
+   * What the day was called when it was trained.
+   *
+   * History is a record, not a projection: reading the name off the plan at
+   * render time meant editing a plan rewrote what someone did last month.
+   * Optional because sessions written before this carry no name.
+   */
+  dayName: z.string().optional(),
   startedAt: z.number().int(),
   endedAt: z.number().int().nullable(),
   sets: z.array(SetRecord),

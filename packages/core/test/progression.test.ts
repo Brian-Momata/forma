@@ -94,8 +94,10 @@ describe("how you get stronger depends on the situation", () => {
     expect(now.chainRank ?? 0).toBeGreaterThan(before.chainRank ?? 0);
   });
 
-  it("adds a set to the compounds on a loaded plan", () => {
-    const { plan, ctx } = build(["barbell", "rack", "bench", "dumbbells"]);
+  it("adds a set to the compounds on a dumbbell plan", () => {
+    // reps-then-load: there is a weight, but not one you can nudge by a kilo,
+    // so volume is the honest lever here.
+    const { plan, ctx } = build(["dumbbells", "bench"]);
     const next = applyFeedback(library, plan, "too-easy", ctx, 1);
 
     const compoundBumped = working(next).some((item, i) => {
@@ -108,6 +110,70 @@ describe("how you get stronger depends on the situation", () => {
       );
     });
     expect(compoundBumped).toBe(true);
+  });
+
+  /**
+   * The Complete screen tells someone on a barbell plan that next session
+   * "keeps the reps and asks for a little more weight". It has to be true: this
+   * is the tier whose entire progression is load.
+   */
+  describe("load tiers actually move the load", () => {
+    it("raises the weight and leaves the reps alone once one is logged", () => {
+      const { plan, ctx } = build(["barbell", "rack", "bench", "dumbbells"]);
+      const first = working(plan)[0]!;
+      const logged = new Map([[first.exerciseId, 60]]);
+
+      const next = applyFeedback(library, plan, "too-easy", ctx, 1, logged);
+      const after = working(next)[0]!;
+
+      expect(after.prescription.targetWeightKg).toBeGreaterThan(60);
+      expect(after.prescription.reps).toBe(first.prescription.reps);
+      expect(after.prescription.sets).toBe(first.prescription.sets);
+    });
+
+    it("keeps climbing from the target once the plan carries one", () => {
+      const { plan, ctx } = build(["barbell", "rack", "bench"]);
+      const seeded: Plan = {
+        ...plan,
+        days: plan.days.map((d) => ({
+          ...d,
+          exercises: d.exercises.map((e) =>
+            e.warmup ? e : { ...e, prescription: { ...e.prescription, targetWeightKg: 80 } }
+          ),
+        })),
+      };
+
+      const next = applyFeedback(library, seeded, "too-easy", ctx, 1);
+      const repBased = working(next).filter((e) => e.prescription.reps !== undefined);
+      expect(repBased.length).toBeGreaterThan(0);
+      for (const item of repBased) {
+        expect(item.prescription.targetWeightKg).toBeGreaterThan(80);
+      }
+
+      // A hold is not a lift: timed work progresses by duration, whatever the
+      // tier, and must not have a weight pushed onto it.
+      for (const item of working(next).filter((e) => e.prescription.durationSec !== undefined)) {
+        expect(item.prescription.durationSec).toBeGreaterThan(
+          working(seeded).find((s) => s.exerciseId === item.exerciseId)!.prescription
+            .durationSec!
+        );
+      }
+    });
+
+    it("adds reps instead when nothing has been logged, and says so", () => {
+      const { plan, ctx } = build(["barbell", "rack", "bench"]);
+      const next = applyFeedback(library, plan, "too-easy", ctx, 1);
+
+      const before = working(plan)[0]!;
+      const after = working(next)[0]!;
+      expect(after.prescription.targetWeightKg ?? null).toBeNull();
+      expect(after.prescription.reps ?? 0).toBeGreaterThan(before.prescription.reps ?? 0);
+
+      // And the screen must not promise a weight change that did not happen.
+      expect(progressionNote("too-easy", { tier: "full-gym" }, false)).not.toContain(
+        "more weight"
+      );
+    });
   });
 
   it("explains itself differently depending on the tier", () => {

@@ -21,6 +21,7 @@ import {
   deriveContraindications,
   deriveCues,
   deriveDefaults,
+  deriveSteps,
   deriveEquipment,
   deriveKind,
   deriveLevel,
@@ -97,9 +98,14 @@ async function main(): Promise<void> {
     const level = ov.level ?? deriveLevel(src);
     const kind = ov.kind ?? deriveKind(src, pattern);
 
+    // Read before the prescription is derived: a one-sided timed movement is
+    // prescribed as both sides' worth, because the player halves it.
+    const name = ov.name ?? src.name;
+    const unilateral = ov.unilateral ?? isUnilateral(src, name);
+
     const candidate = {
       id: src.id,
-      name: ov.name ?? src.name,
+      name,
       pattern,
       requires: ov.requires ?? deriveEquipment(src),
       primaryMuscles: ov.primaryMuscles ?? mapMuscles(src.primaryMuscles),
@@ -114,14 +120,15 @@ async function main(): Promise<void> {
       isLoud: ov.isLoud ?? isLoud(src),
       dynamic: ov.dynamic ?? isDynamic(src, pattern),
       spaceNeeded: ov.spaceNeeded ?? spaceNeeded(src),
-      unilateral: ov.unilateral ?? isUnilateral(src),
+      unilateral,
       cues: ov.cues ?? deriveCues(src),
+      steps: ov.steps ?? deriveSteps(src),
       images: ov.images ?? src.images,
       chainId: ov.chainId ?? null,
       chainRank: ov.chainRank ?? null,
       // An override that supplies cues is a deliberate curation: trust it into the pool.
       core: ov.core ?? (isUsable(src) && Boolean(ov.cues)),
-      defaults: ov.defaults ?? deriveDefaults(kind, pattern, level),
+      defaults: ov.defaults ?? deriveDefaults(kind, pattern, level, unilateral),
     };
 
     const parsed = Exercise.safeParse(candidate);

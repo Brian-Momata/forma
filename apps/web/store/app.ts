@@ -27,6 +27,8 @@ import {
 
 interface AppStore {
   ready: boolean;
+  /** Set when bootstrap failed, so a screen can offer a retry instead of a spinner. */
+  error: string | null;
   library: Library | null;
   profile: Profile | null;
   setups: Setup[];
@@ -36,6 +38,7 @@ interface AppStore {
   activePlan: Plan | null;
 
   load(): Promise<void>;
+  retry(): Promise<void>;
   refresh(): Promise<void>;
 
   updateProfile(patch: Partial<Profile>): Promise<void>;
@@ -58,6 +61,7 @@ interface AppStore {
 
 export const useApp = create<AppStore>((set, get) => ({
   ready: false,
+  error: null,
   library: null,
   profile: null,
   setups: [],
@@ -66,28 +70,50 @@ export const useApp = create<AppStore>((set, get) => ({
   activeSetup: null,
   activePlan: null,
 
+  /**
+   * Brings the app up.
+   *
+   * Wrapped, because it can genuinely fail: the exercise library is a separate
+   * chunk, and a first run that goes offline before it has ever been fetched
+   * used to reject inside Promise.all, leave `ready` false forever, and strand
+   * every screen on "Loading…" with an unhandled rejection behind it.
+   */
   async load() {
     if (get().ready) return;
-    const [library, profile, setups, plans, sessions, activeSetup, activePlan] =
-      await Promise.all([
-        loadLibrary(),
-        getProfile(),
-        listSetups(),
-        listPlans(),
-        listSessions(),
-        getActiveSetup(),
-        getActivePlan(),
-      ]);
-    set({
-      ready: true,
-      library,
-      profile: profile ?? null,
-      setups,
-      plans,
-      sessions,
-      activeSetup: activeSetup ?? null,
-      activePlan: activePlan ?? null,
-    });
+    try {
+      const [library, profile, setups, plans, sessions, activeSetup, activePlan] =
+        await Promise.all([
+          loadLibrary(),
+          getProfile(),
+          listSetups(),
+          listPlans(),
+          listSessions(),
+          getActiveSetup(),
+          getActivePlan(),
+        ]);
+      set({
+        ready: true,
+        error: null,
+        library,
+        profile: profile ?? null,
+        setups,
+        plans,
+        sessions,
+        activeSetup: activeSetup ?? null,
+        activePlan: activePlan ?? null,
+      });
+    } catch {
+      set({
+        ready: false,
+        error:
+          "We could not load your exercises. Check your connection once, and they are yours offline from then on.",
+      });
+    }
+  },
+
+  async retry() {
+    set({ error: null });
+    await get().load();
   },
 
   async refresh() {
@@ -181,8 +207,18 @@ export const useApp = create<AppStore>((set, get) => ({
     await get().refresh();
   },
 
+  /**
+   * Patches one plan in place rather than re-reading the whole database.
+   *
+   * Editing is the highest-frequency write in the app -- a stepper tap, a
+   * character typed -- and a full refresh per edit meant every keystroke read
+   * back the profile, every setup, every plan and every session.
+   */
   async updatePlan(plan) {
-    await savePlan(plan);
-    await get().refresh();
+    const saved = await savePlan(plan);
+    set((s) => ({
+      plans: s.plans.map((p) => (p.id === saved.id ? saved : p)),
+      activePlan: s.activePlan?.id === saved.id ? saved : s.activePlan,
+    }));
   },
 }));

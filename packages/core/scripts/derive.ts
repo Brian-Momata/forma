@@ -187,10 +187,59 @@ export function isDynamic(src: SourceExercise, pattern: Pattern | null): boolean
   return DYNAMIC.test(src.name);
 }
 
-export function isUnilateral(src: SourceExercise): boolean {
-  return rx(
-    "single|one.?arm|one.?leg|split|bulgarian|lunge|step.?up|suitcase|side plank|alternating|\\bside\\b"
-  ).test(src.name);
+/**
+ * Movements that train both sides inside a single set.
+ *
+ * These read as one-sided by name -- a walking lunge is obviously a leg at a
+ * time -- but stopping halfway to "switch sides" would be nonsense, because
+ * alternating is the movement. Checked before the per-side signals so the name
+ * "lunge" cannot drag them in.
+ */
+const ALTERNATING = rx(
+  "alternating|alternate|walking|\\bmarch|bicycle|air bike|mountain climber|flutter|" +
+    "skater|shuffle|scissor|jumping jack|burpee|russian twist|dead ?bug"
+);
+
+/** The source saying so outright, wherever the name does not. */
+const ALTERNATING_TEXT = rx("alternat(e|es|ing)\\b");
+
+/**
+ * Text the source uses when a movement is done one side at a time.
+ *
+ * Far more reliable than the name: "Standing Hip Circles" reads bilateral and
+ * is not, while "Side Plank" reads one-sided and is. The instructions say so
+ * outright -- "repeat on the other side" -- and they say it for every entry the
+ * dataset actually describes.
+ */
+const PER_SIDE_TEXT = rx(
+  // "repeat ... on the other leg", "perform ... then switch sides". The verb
+  // matters: "a dumbbell in each hand" and "hold the bar at each side" are how
+  // the source describes two-handed work, and matching those made half the
+  // dumbbell rack one-sided.
+  "(repeat|perform|switch|do|complete|continue|hold|finish)[^.]{0,60}" +
+    "\\b(the )?(other|opposite) (side|arm|leg|hand|foot|knee)|" +
+    "repeat[^.]{0,40}with (the )?(left|right|other)|" +
+    "switch (sides|legs|arms)|" +
+    "\\bper side\\b|" +
+    "(standing |balanced )?on one (leg|foot)\\b"
+);
+
+const PER_SIDE_NAME = rx(
+  "single|one.?arm|one.?leg|split squat|bulgarian|step.?up|suitcase|side plank|" +
+    "\\bside\\b|curtsy|windmill|woodchop|wood chop|pallof|\\barcher\\b"
+);
+
+/**
+ * Whether the player owes the person a switch partway through the set.
+ *
+ * A false negative is the expensive one: the clock runs out on the left leg,
+ * the session moves on, and half the movement never happened.
+ */
+export function isUnilateral(src: SourceExercise, name = src.name): boolean {
+  const text = src.instructions.join(" ");
+  if (ALTERNATING.test(name) || ALTERNATING_TEXT.test(text)) return false;
+  if (PER_SIDE_TEXT.test(text)) return true;
+  return PER_SIDE_NAME.test(name);
 }
 
 /* -------------------------------------------------------------------------
@@ -247,16 +296,25 @@ export function deriveKind(src: SourceExercise, pattern: Pattern | null): Exerci
   return "reps";
 }
 
+/**
+ * @param unilateral Worked one side at a time. A timed set of one of these is
+ * halved by the player and run twice, so the prescribed duration has to be two
+ * sides' worth or the movement quietly trains for half as long as it reads.
+ */
 export function deriveDefaults(
   kind: ExerciseKind,
   pattern: Pattern | null,
-  level: Level
+  level: Level,
+  unilateral = false
 ): Prescription {
   if (pattern === "mobility") {
-    return { sets: 1, durationSec: 45, restSec: 0 };
+    // Not zero rest: a warm-up drill needs a breath and a set-up before the
+    // next one, and zero is what the player reads as "move on immediately".
+    return { sets: 1, durationSec: unilateral ? 40 : 45, restSec: 20 };
   }
   if (kind === "time") {
-    return { sets: 2, durationSec: level === "beginner" ? 30 : 45, restSec: 30 };
+    const perSide = level === "beginner" ? 30 : 45;
+    return { sets: 2, durationSec: unilateral ? perSide * 2 : perSide, restSec: 30 };
   }
   return {
     sets: level === "beginner" ? 2 : 3,
@@ -276,6 +334,43 @@ export function deriveLevel(src: SourceExercise): Level {
  * Cues — the design shows exactly two short lines. Source instructions are
  * five verbose paragraphs, so condense; the core set is hand-written instead.
  * ----------------------------------------------------------------------- */
+
+/**
+ * The full how-to, one step per line.
+ *
+ * The source writes these as prose paragraphs with the odd typo and a lot of
+ * "This will be your starting position" -- readable, but not something to scan
+ * between breaths. Split on sentences, drop the pure-boilerplate ones, and cap
+ * the list: a step list longer than eight is a paragraph again.
+ */
+const STEP_NOISE = rx(
+  "^(this will be|this is your starting|repeat for the (recommended|desired)|" +
+    "for a more advanced|caution|variations?:|tip:)"
+);
+
+const MAX_STEPS = 8;
+
+export function deriveSteps(src: SourceExercise): string[] {
+  const steps: string[] = [];
+
+  for (const raw of src.instructions) {
+    // One instruction is often two or three sentences of unrelated advice.
+    for (const sentence of raw.split(/(?<=[.!?])\s+/)) {
+      const clean = sentence
+        .replace(/\s+/g, " ")
+        .replace(/\bhour hands\b/gi, "your hands")
+        .trim();
+      if (clean.length < 12) continue;
+      if (STEP_NOISE.test(clean)) continue;
+      // The source repeats itself across instructions more than you would think.
+      if (steps.some((s) => s.toLowerCase() === clean.toLowerCase())) continue;
+      steps.push(clean.endsWith(".") ? clean : `${clean}.`);
+      if (steps.length === MAX_STEPS) return steps;
+    }
+  }
+
+  return steps;
+}
 
 export function deriveCues(src: SourceExercise): string[] {
   const usable = src.instructions

@@ -1,7 +1,13 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { generatePlan } from "../src/generator.ts";
+import {
+  estimateDaySeconds,
+  estimateExerciseSeconds,
+  generatePlan,
+} from "../src/generator.ts";
+import { resolveArchetype } from "../src/archetypes.ts";
+import { resolveTier } from "../src/equipment.ts";
 import { isPermitted } from "../src/selection.ts";
 import { arbProfile, arbSetup, library, makeProfile, makeSetup } from "./helpers.ts";
 
@@ -131,6 +137,26 @@ describe("safety invariants hold for every situation", () => {
     );
   });
 
+  /**
+   * The reported bug. Warm-up drills were prescribed with zero rest, which the
+   * player reads as "move straight on" -- so a warm-up was four movements back
+   * to back with a six second gap and no breather anywhere in it.
+   */
+  it("gives every warm-up drill a breather after it", () => {
+    fc.assert(
+      fc.property(arbProfile, arbSetup, (profile, setup) => {
+        const plan = generatePlan(library, profile, setup);
+        for (const day of plan.days) {
+          for (const item of day.exercises) {
+            if (!item.warmup) continue;
+            expect(item.prescription.restSec, item.exerciseId).toBeGreaterThan(0);
+          }
+        }
+      }),
+      runs
+    );
+  });
+
   it("caps beginner volume regardless of what the goal asks for", () => {
     fc.assert(
       fc.property(arbProfile, arbSetup, (profile, setup) => {
@@ -182,6 +208,153 @@ describe("isPermitted", () => {
         }
       }),
       { numRuns: 200 }
+    );
+  });
+});
+
+/**
+ * The generator's contract from ENGINEERING.md §8, minus the safety rules
+ * above: it must fill the session it promised, in the time it promised.
+ *
+ * These are the properties the doc names and the suite was missing -- which is
+ * why a plan could quietly hand someone 31 minutes of a 75-minute request.
+ */
+describe("the plan is the plan we said we would build", () => {
+  const runs = { numRuns: 300 };
+
+  it("never leaves a session with nothing in it", () => {
+    fc.assert(
+      fc.property(arbProfile, arbSetup, (profile, setup) => {
+        const plan = generatePlan(library, profile, setup);
+        expect(plan.days.length).toBe(profile.schedule.daysPerWeek);
+        for (const day of plan.days) {
+          const work = day.exercises.filter((e) => !e.warmup);
+          expect(work.length, `${day.name} has no working exercise`).toBeGreaterThan(0);
+        }
+      }),
+      runs
+    );
+  });
+
+  it("never prescribes the same movement twice in one session", () => {
+    // A warm-up that repeats the work is not a warm-up, and a day that lists
+    // the same lift twice reads as a bug to the person doing it.
+    fc.assert(
+      fc.property(arbProfile, arbSetup, (profile, setup) => {
+        const plan = generatePlan(library, profile, setup);
+        for (const day of plan.days) {
+          const ids = day.exercises.map((e) => e.exerciseId);
+          expect(new Set(ids).size, `${day.name} repeats a movement`).toBe(ids.length);
+        }
+      }),
+      runs
+    );
+  });
+
+  it("gives every day a name you can tell apart from the others", () => {
+    fc.assert(
+      fc.property(arbProfile, arbSetup, (profile, setup) => {
+        const names = generatePlan(library, profile, setup).days.map((d) => d.name);
+        expect(new Set(names).size).toBe(names.length);
+      }),
+      runs
+    );
+  });
+
+  it("never overruns the time budget", () => {
+    // Someone who set aside 30 minutes has 30 minutes. This one is absolute.
+    fc.assert(
+      fc.property(arbProfile, arbSetup, (profile, setup) => {
+        const budget = profile.schedule.minutesPerSession * 60;
+        for (const day of generatePlan(library, profile, setup).days) {
+          expect(
+            estimateDaySeconds(day),
+            `${day.name} overruns ${profile.schedule.minutesPerSession}min`
+          ).toBeLessThanOrEqual(budget);
+        }
+      }),
+      runs
+    );
+  });
+
+  /**
+   * The budget is a ceiling the plan fills as far as sound programming allows,
+   * not a quota it must hit: padding a beginner's session to fill an hour would
+   * breach safety rule 5, and a pool thinned by limitations and a tight room
+   * runs out of movements before it runs out of minutes.
+   *
+   * So the guarantee is stated in two halves -- more time never buys less, and
+   * where nothing else is binding, the time asked for is the time given.
+   */
+  it("never gives less training for more time", () => {
+    fc.assert(
+      fc.property(arbProfile, arbSetup, (profile, setup) => {
+        const at = (minutesPerSession: number): number => {
+          const p = { ...profile, schedule: { ...profile.schedule, minutesPerSession } };
+          return estimateDaySeconds(generatePlan(library, p, setup).days[0]!);
+        };
+
+        expect(at(45), "45 minutes gave less than 20").toBeGreaterThanOrEqual(at(20));
+        expect(at(75), "75 minutes gave less than 45").toBeGreaterThanOrEqual(at(45));
+      }),
+      { numRuns: 120 }
+    );
+  });
+
+  it("leaves no room it could have used", () => {
+    // The fitter's own job, stated exactly: if any exercise is still below the
+    // archetype's set ceiling, adding one more set to the cheapest of them must
+    // overrun. Anything less means budget was left on the table.
+    fc.assert(
+      fc.property(arbProfile, arbSetup, (profile, setup) => {
+        const budget = profile.schedule.minutesPerSession * 60;
+        const arch = resolveArchetype(
+          profile.goal,
+          resolveTier(setup.equipment),
+          profile.experience,
+          profile.schedule.daysPerWeek
+        );
+        const ceiling =
+          profile.experience === "new" ? arch.sets : arch.sets + (arch.reps === null ? 3 : 1);
+
+        for (const day of generatePlan(library, profile, setup).days) {
+          const growable = day.exercises.filter(
+            (e) => !e.warmup && e.prescription.sets < ceiling
+          );
+          if (growable.length === 0) continue;
+
+          const cheapest = Math.min(
+            ...growable.map(
+              (e) =>
+                estimateExerciseSeconds({
+                  ...e.prescription,
+                  sets: e.prescription.sets + 1,
+                }) - estimateExerciseSeconds(e.prescription)
+            )
+          );
+          expect(
+            estimateDaySeconds(day) + cheapest,
+            `${day.name} had room for another set and did not take it`
+          ).toBeGreaterThan(budget);
+        }
+      }),
+      runs
+    );
+  });
+
+  it("never puts a jump in a mobility session", () => {
+    // Safety rule 6. It currently holds by how MOBILITY_DAY is composed rather
+    // than by construction, which is exactly the kind of thing that decays.
+    fc.assert(
+      fc.property(arbProfile, arbSetup, (profile, setup) => {
+        const plan = generatePlan(library, { ...profile, goal: "mobility" }, setup);
+        for (const day of plan.days) {
+          for (const item of day.exercises) {
+            expect(library.byId(item.exerciseId)?.isJumping).toBe(false);
+          }
+        }
+      }),
+      runs
     );
   });
 });
