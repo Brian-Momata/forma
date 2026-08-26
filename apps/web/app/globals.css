@@ -1,0 +1,146 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Runtime-swappable theme.
+   The design exposes `accent` (4 options) and `restColor` (3) as props; we ship
+   them as a real picker, so these two must stay overridable at runtime.
+   --------------------------------------------------------------------------- */
+:root {
+  --acc: #d4ff3f;
+  --rest: #8a7bff;
+}
+
+@theme inline {
+  --color-acc: var(--acc);
+  --color-rest: var(--rest);
+}
+
+/* ---------------------------------------------------------------------------
+   Fixed tokens, extracted verbatim from `Home Workout v2.dc.html`.
+   No raw hex in components — see docs/ENGINEERING.md §7.
+   --------------------------------------------------------------------------- */
+@theme {
+  /* surfaces */
+  --color-app: #050506;
+  --color-screen: #08090b;
+  --color-media: #0d0f13;
+  --color-bar: #0b0c0f;
+  --color-rest-screen: #07061a;
+
+  /* text ramp, brightest to dimmest */
+  --color-t1: #f2f4f1;
+  --color-t2: #b7bcc4;
+  --color-t3: #8a8f98;
+  --color-t4: #6d727b;
+  --color-t5: #5b606b;
+  --color-dim: #4a4e56;
+
+  /* lines */
+  --color-line1: #3a3e45;
+  --color-line2: #2f333a;
+  --color-line3: #2a2d33;
+
+  /* rest-screen text ramp */
+  --color-r1: #c4c0e8;
+  --color-r2: #9a96c4;
+  --color-r3: #7b76a8;
+
+  /* hairlines */
+  --color-hair-06: rgb(255 255 255 / 0.06);
+  --color-hair-07: rgb(255 255 255 / 0.07);
+  --color-hair-08: rgb(255 255 255 / 0.08);
+  --color-hair-09: rgb(255 255 255 / 0.09);
+  --color-hair-12: rgb(255 255 255 / 0.12);
+  --color-hair-14: rgb(255 255 255 / 0.14);
+  --color-hair-16: rgb(255 255 255 / 0.16);
+  --color-hair-18: rgb(255 255 255 / 0.18);
+
+  --font-display: var(--font-archivo), "Archivo", system-ui, sans-serif;
+  --font-body: var(--font-instrument), "Instrument Sans", system-ui, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+   Archivo's `wdth` axis is the app's signature — the design sets it at 104-118
+   on every heading and numeral. Exposed as a utility so components never write
+   raw font-variation-settings.
+   --------------------------------------------------------------------------- */
+@utility wdth-* {
+  font-variation-settings: "wdth" --value(integer);
+}
+
+/* Timers must never jitter. */
+@utility tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+   --------------------------------------------------------------------------- */
+@layer base {
+  html {
+    background: var(--color-app);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-app);
+    color: var(--color-t1);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;
+  }
+
+  /* The design hides scrollbars globally. */
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  *::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+
+  /* Never let a mis-tap select the huge numerals mid-workout. */
+  button,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Motion — the design's five keyframes, ported verbatim.
+   Every one has a reduced-motion variant (ENGINEERING.md §10).
+   --------------------------------------------------------------------------- */
+@keyframes chimeRing {
+  0% { transform: scale(0.5); opacity: 0.9; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+@keyframes chimePop {
+  0% { transform: scale(0.82); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes sweep {
+  to { transform: rotate(360deg); }
+}
+@keyframes drift {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, -14px, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

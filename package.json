@@ -1,0 +1,17 @@
+{
+  "name": "form",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "npm run dev --workspace @form/web",
+    "build": "npm run build --workspace @form/web",
+    "start": "npm run start --workspace @form/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e --workspace @form/web",
+    "library": "npm run library --workspace @form/core"
+  }
+}
