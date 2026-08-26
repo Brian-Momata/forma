@@ -175,6 +175,18 @@ export function spaceNeeded(src: SourceExercise): "tight" | "normal" {
   return TRAVELS.test(src.name) ? "normal" : "tight";
 }
 
+const DYNAMIC = rx(
+  "circle|swing|march|cat.?cow|inchworm|roll|twist|crawl|walkout|dynamic|" +
+    "arm cross|leg cross|windmill|jack|skip|lunge|reach"
+);
+
+/** Whether the movement travels through a range instead of holding an end range. */
+export function isDynamic(src: SourceExercise, pattern: Pattern | null): boolean {
+  if (pattern !== "mobility") return true;
+  if (rx("-smr|foam").test(src.name)) return false;
+  return DYNAMIC.test(src.name);
+}
+
 export function isUnilateral(src: SourceExercise): boolean {
   return rx(
     "single|one.?arm|one.?leg|split|bulgarian|lunge|step.?up|suitcase|side plank|alternating|\\bside\\b"

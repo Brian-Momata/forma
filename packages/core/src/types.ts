@@ -162,6 +162,13 @@ export const Exercise = z.object({
 
   isJumping: z.boolean(),
   isLoud: z.boolean(),
+  /**
+   * Moves through a range rather than holding an end range.
+   *
+   * Warm-ups must be dynamic: holding a static stretch before strength work
+   * measurably reduces output. Static work belongs in mobility sessions.
+   */
+  dynamic: z.boolean(),
   spaceNeeded: z.enum(["tight", "normal"]),
   unilateral: z.boolean(),
 
@@ -227,6 +234,8 @@ export const Profile = z.object({
   units: z.enum(["kg", "lb"]),
   accent: z.string(),
   restColor: z.string(),
+  /** Lifts the dimmest text tiers; see the contrast note in ENGINEERING.md 10. */
+  highContrast: z.boolean(),
   autoAdvance: z.boolean(),
   restOverrideSec: z.number().int().min(10).max(300).nullable(),
   disclaimerAcceptedAt: z.number().int().nullable(),

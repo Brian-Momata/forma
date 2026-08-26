@@ -16,3 +16,5 @@ playwright-report/
 scratch/
 scripts/.cache/
 packages/core/scripts/.cache/
+apps/web/test-results/
+apps/web/playwright-report/

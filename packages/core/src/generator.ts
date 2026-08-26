@@ -172,7 +172,13 @@ function buildWarmup(
     for (const m of e.secondaryMuscles) target.add(m);
   }
 
-  const scored = pool
+  // Dynamic only. Holding a static stretch before strength work measurably
+  // reduces output, so a warm-up that opens with a held fold is a worse
+  // warm-up than no warm-up at all.
+  const dynamic = pool.filter((e) => e.dynamic);
+  const usable = dynamic.length >= count ? dynamic : pool;
+
+  const scored = usable
     .map((e) => {
       let s = -(state.seen.get(e.id) ?? 0) * 3 + state.rand();
       for (const m of e.primaryMuscles) if (target.has(m)) s += 6;

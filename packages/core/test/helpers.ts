@@ -35,6 +35,7 @@ export function makeProfile(over: Partial<Profile> = {}): Profile {
     units: "kg",
     accent: "#D4FF3F",
     restColor: "#8A7BFF",
+    highContrast: false,
     autoAdvance: true,
     restOverrideSec: null,
     disclaimerAcceptedAt: 0,

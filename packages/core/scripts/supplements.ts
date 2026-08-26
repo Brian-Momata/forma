@@ -31,6 +31,7 @@ const ex = (
     contraindications: [],
     isJumping: false,
     isLoud: false,
+    dynamic: true,
     spaceNeeded: "tight",
     unilateral: false,
     images: [],

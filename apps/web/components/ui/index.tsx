@@ -1,0 +1,277 @@
+"use client";
+
+import type { CSSProperties, ReactNode } from "react";
+
+/**
+ * Design-system primitives, built to `Home Workout v2.dc.html`.
+ *
+ * The design's raw px values live here and nowhere else, so components compose
+ * from a named scale rather than sprinkling magic numbers (ENGINEERING.md §7).
+ */
+
+/* ------------------------------------------------------------------ display */
+
+/** The Archivo display scale, straight off the artboard. */
+const DISPLAY = {
+  ready: { fontSize: 210, letterSpacing: "-.08em", lineHeight: 0.82, wdth: 118 },
+  rest: { fontSize: 158, letterSpacing: "-.075em", lineHeight: 0.84, wdth: 118 },
+  timer: { fontSize: 118, letterSpacing: "-.06em", lineHeight: 0.86, wdth: 118 },
+  done: { fontSize: 92, letterSpacing: "-.065em", lineHeight: 0.86, wdth: 110 },
+  date: { fontSize: 62, letterSpacing: "-.055em", lineHeight: 0.9, wdth: 118 },
+  next: { fontSize: 52, letterSpacing: "-.05em", lineHeight: 0.94, wdth: 104 },
+  hero: { fontSize: 40, letterSpacing: "-.045em", lineHeight: 0.98, wdth: 108 },
+  title: { fontSize: 36, letterSpacing: "-.04em", lineHeight: 1, wdth: 108 },
+  step: { fontSize: 34, letterSpacing: "-.035em", lineHeight: 1.05, wdth: 108 },
+  exercise: { fontSize: 30, letterSpacing: "-.04em", lineHeight: 1, wdth: 106 },
+  stat: { fontSize: 34, letterSpacing: "-.04em", lineHeight: 1, wdth: 114 },
+  metric: { fontSize: 26, letterSpacing: "-.03em", lineHeight: 1, wdth: 112 },
+  upNext: { fontSize: 24, letterSpacing: "-.035em", lineHeight: 1, wdth: 106 },
+} as const;
+
+export type DisplaySize = keyof typeof DISPLAY;
+
+export function Display({
+  size,
+  children,
+  className = "",
+  tabular = false,
+  weight = 900,
+  style,
+}: {
+  size: DisplaySize;
+  children: ReactNode;
+  className?: string;
+  tabular?: boolean;
+  weight?: 800 | 900;
+  style?: CSSProperties;
+}) {
+  const d = DISPLAY[size];
+  return (
+    <div
+      className={className}
+      style={{
+        fontFamily: "var(--font-display)",
+        fontVariationSettings: `"wdth" ${d.wdth}`,
+        fontWeight: weight,
+        fontSize: d.fontSize,
+        letterSpacing: d.letterSpacing,
+        lineHeight: d.lineHeight,
+        fontVariantNumeric: tabular ? "tabular-nums" : undefined,
+        textWrap: "pretty",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** The small uppercase label used above almost every block in the design. */
+export function Kicker({
+  children,
+  tone = "muted",
+  className = "",
+}: {
+  children: ReactNode;
+  tone?: "muted" | "accent" | "rest" | "bright";
+  className?: string;
+}) {
+  const color =
+    tone === "accent"
+      ? "var(--acc)"
+      : tone === "rest"
+        ? "var(--rest)"
+        : tone === "bright"
+          ? "var(--color-t2)"
+          : "var(--color-t5)";
+  return (
+    <div
+      className={className}
+      style={{
+        fontSize: 10.5,
+        letterSpacing: ".2em",
+        textTransform: "uppercase",
+        fontWeight: 600,
+        color,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ buttons */
+
+export function PillButton({
+  children,
+  onClick,
+  variant = "accent",
+  disabled = false,
+  className = "",
+  type = "button",
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  variant?: "accent" | "outline" | "rest" | "dark" | "muted";
+  disabled?: boolean;
+  className?: string;
+  type?: "button" | "submit";
+}) {
+  const base =
+    "h-[58px] rounded-full flex items-center justify-center cursor-pointer select-none transition-colors disabled:opacity-40 disabled:cursor-not-allowed px-6";
+  const styles: Record<string, string> = {
+    accent: "bg-acc text-screen hover:brightness-110",
+    rest: "bg-rest text-[#0A081F] hover:brightness-110",
+    outline: "border border-hair-18 text-t1 hover:border-acc hover:text-acc",
+    dark: "bg-screen text-acc hover:bg-[#16181D]",
+    muted: "bg-white/7 text-t3 hover:bg-white/12 hover:text-t1",
+  };
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className={`${base} ${styles[variant]} ${className}`}
+      style={{
+        fontFamily: "var(--font-display)",
+        fontVariationSettings: '"wdth" 110',
+        fontSize: 15,
+        fontWeight: 800,
+        letterSpacing: ".02em",
+        textTransform: "uppercase",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ----------------------------------------------------------------- progress */
+
+/** The segmented bar used for onboarding steps and set progress. */
+export function Segments({
+  total,
+  filled,
+  tone = "accent",
+  className = "",
+}: {
+  total: number;
+  filled: number;
+  tone?: "accent" | "rest";
+  className?: string;
+}) {
+  return (
+    <div className={`flex gap-[3px] ${className}`}>
+      {Array.from({ length: Math.max(0, total) }, (_, i) => (
+        <div key={i} className="relative h-[2px] flex-1 bg-white/13">
+          {i < filled && (
+            <div
+              className="absolute inset-0"
+              style={{ background: tone === "rest" ? "var(--rest)" : "var(--acc)" }}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function ProgressBar({
+  value,
+  tone = "accent",
+}: {
+  value: number;
+  tone?: "accent" | "rest";
+}) {
+  const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
+  return (
+    <div className="relative mt-[18px] h-[3px] w-full bg-white/12">
+      <div
+        className="absolute inset-y-0 left-0 transition-[width] duration-200 ease-linear"
+        style={{ width: `${pct}%`, background: tone === "rest" ? "var(--rest)" : "var(--acc)" }}
+      />
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------- shell */
+
+/** A full-height phone screen with the design's safe-area padding. */
+export function Screen({
+  children,
+  background = "var(--color-screen)",
+  className = "",
+}: {
+  children: ReactNode;
+  background?: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`relative mx-auto flex h-[100dvh] w-full max-w-[520px] flex-col overflow-hidden ${className}`}
+      style={{ background }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Scrollable body between a fixed header and footer. */
+export function ScrollArea({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <div className={`flex-1 overflow-y-auto overscroll-contain ${className}`}>{children}</div>;
+}
+
+/** The frosted bar pinned to the bottom of most screens. */
+export function FooterBar({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      className={`border-t border-hair-08 bg-screen/85 backdrop-blur-[18px] ${className}`}
+      style={{ paddingBottom: "max(30px, env(safe-area-inset-bottom))" }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** The rounded sheet used on Rest, Transition and Complete. */
+export function Sheet({
+  children,
+  background = "var(--color-screen)",
+  className = "",
+  grabber = false,
+}: {
+  children: ReactNode;
+  background?: string;
+  className?: string;
+  grabber?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-t-[26px] border-t border-hair-12 px-[22px] pt-[18px] ${className}`}
+      style={{ background, paddingBottom: "max(30px, env(safe-area-inset-bottom))" }}
+    >
+      {grabber && <div className="mx-auto mb-4 h-[3px] w-[38px] rounded-full bg-white/22" />}
+      {children}
+    </div>
+  );
+}
+
+export function Hairline({ className = "" }: { className?: string }) {
+  return <div className={`h-px w-full bg-white/9 ${className}`} />;
+}
+
+export function Tag({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="border border-hair-14 px-[10px] py-[6px] text-t2"
+      style={{
+        fontSize: 10.5,
+        letterSpacing: ".1em",
+        textTransform: "uppercase",
+        fontWeight: 700,
+      }}
+    >
+      {children}
+    </div>
+  );
+}

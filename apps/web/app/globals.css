@@ -60,6 +60,20 @@
 }
 
 /* ---------------------------------------------------------------------------
+   High contrast.
+
+   The design's dim label tier (#5B606B on #08090B) computes to about 3.1:1,
+   below the 4.5:1 AA threshold, and it is used on small uppercase labels
+   throughout. Rather than change the design for everyone, this lifts the three
+   dimmest tiers for anyone who needs it (ENGINEERING.md sec.10).
+   --------------------------------------------------------------------------- */
+:root[data-contrast="high"] {
+  --color-t4: #949aa3;
+  --color-t5: #8a9099;
+  --color-dim: #767c85;
+}
+
+/* ---------------------------------------------------------------------------
    Archivo's `wdth` axis is the app's signature — the design sets it at 104-118
    on every heading and numeral. Exposed as a utility so components never write
    raw font-variation-settings.

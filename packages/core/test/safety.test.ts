@@ -114,6 +114,23 @@ describe("safety invariants hold for every situation", () => {
     );
   });
 
+  it("warms up with movement, never a held stretch", () => {
+    // Holding a static stretch before strength work measurably reduces output,
+    // so a warm-up built from held folds is worse than none.
+    fc.assert(
+      fc.property(arbProfile, arbSetup, (profile, setup) => {
+        const plan = generatePlan(library, profile, setup);
+        for (const day of plan.days) {
+          for (const item of day.exercises) {
+            if (!item.warmup) continue;
+            expect(library.byId(item.exerciseId)?.dynamic, item.exerciseId).toBe(true);
+          }
+        }
+      }),
+      runs
+    );
+  });
+
   it("caps beginner volume regardless of what the goal asks for", () => {
     fc.assert(
       fc.property(arbProfile, arbSetup, (profile, setup) => {

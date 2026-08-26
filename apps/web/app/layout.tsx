@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Archivo, Instrument_Sans } from "next/font/google";
+import { ServiceWorkerRegistrar } from "@/components/service-worker";
+import { ThemeSync } from "@/components/theme-sync";
 import "./globals.css";
 
 /**
@@ -43,7 +45,11 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${archivo.variable} ${instrument.variable}`}>
-      <body>{children}</body>
+      <body>
+        <ThemeSync />
+        <ServiceWorkerRegistrar />
+        {children}
+      </body>
     </html>
   );
 }
