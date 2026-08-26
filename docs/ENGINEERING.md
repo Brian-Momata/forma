@@ -144,6 +144,13 @@ The React layer owns the interval, and it is the only place that may read the cl
 - **Never persist derived values.** Plan duration, streak, weekly volume, and total sets
   are computed. Persisted derived values go stale and then lie.
 
+**Goal and schedule live on the plan, not the person.** A person is not one
+goal: someone can run a strength block at the gym and a mobility plan at home in
+the same week. The profile holds defaults for the *next* plan they create, and
+changing them must never rewrite a plan that already exists. Limitations are the
+exception — they are a safety input, so changing them rebuilds every generated
+plan (hand-edited plans are still left alone).
+
 ---
 
 ## 6. State ownership
@@ -198,6 +205,12 @@ over arbitrary valid inputs and let fast-check find the edge cases we wouldn't t
 > exercise, no exercise requiring unavailable equipment, no expert movement for a
 > beginner, fills every required pattern slot, and fits its time budget.
 
+**Plan generation must stay reproducible.** The same answers give the same plan,
+so the plan id must never feed the generator's seed. It is tempting (it makes a
+second plan for the same situation look different), but it would mean the same
+answers produced a different plan on every install, and "we built this from what
+you told us" would stop being true.
+
 **Every bug fix begins with a failing test.** No exceptions — a bug that had no test is
 a bug that will come back.
 
@@ -219,6 +232,18 @@ configurable and not overridable by a template.
 7. A medical disclaimer is shown during onboarding and acknowledged before the first session.
 
 **When two rules conflict, the more conservative one wins.**
+
+### What these rules do and do not govern
+
+They govern what the app **prescribes**: anything the generator puts in front of
+someone unasked. They do not govern what a person may **choose** for themselves.
+
+The exercise picker therefore shows the whole library, including movements that
+need equipment a setup lacks or that load something the person is working
+around — labelled, not hidden. Silently removing half the library from someone
+building their own plan would be the more confusing and more paternalistic
+answer, and it would not make anyone safer. The generator's invariants are
+unaffected, and are still asserted as properties.
 
 ---
 

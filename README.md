@@ -23,7 +23,25 @@ equipment changes a plan's **structure** rather than just its exercise names:
 | Full gym | 5–8 | 117s | Add weight |
 
 A **Setup** is one place you train. Most people have two or three and switch
-between them; each gets its own plan, and history follows the person.
+between them.
+
+## Plans
+
+Goal and schedule belong to the **plan**, not to you — so a strength block at the
+gym and a mobility plan at home can run in the same week. Keep as many as you
+like and switch between them; history follows you, not the plan.
+
+Every plan is editable, and you can start one from nothing:
+
+- **Build it for me** — pick a setup, a goal and a schedule, and the generator
+  fills it in.
+- **Start empty** — an empty plan and the whole exercise library, where you set
+  your own sets, reps and rest, add and reorder days, and swap anything.
+
+The picker shows every exercise in the library. Movements that need equipment
+your setup lacks, or that load something you are working around, are labelled
+rather than hidden — the generator will never *prescribe* those, but if you want
+one in your own plan, that is your call.
 
 ## Getting started
 

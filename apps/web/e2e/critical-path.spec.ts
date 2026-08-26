@@ -79,9 +79,14 @@ test("a new person can onboard, get a plan, and train", async ({ page }) => {
     const setComplete = page.getByRole("button", { name: "Set complete" });
     if (await setComplete.isVisible().catch(() => false)) {
       await setComplete.click();
+      await page.waitForTimeout(60);
       continue;
     }
     await page.clock.runFor(30_000);
+    // Yield so React can render the next phase. Without this the loop can spin
+    // on a rep-based set forever: it is open-ended, so advancing the clock does
+    // nothing and the button it is waiting for has not painted yet.
+    await page.waitForTimeout(60);
   }
 
   expect(completed, "workout reached the complete screen").toBe(true);
@@ -136,4 +141,86 @@ test("a workout survives a reload mid-set", async ({ page }) => {
 
   // It resumes rather than starting over or dumping you home.
   await expect(page.locator("body")).not.toHaveText(/Start workout/, { timeout: 20_000 });
+});
+
+/**
+ * A person is not one goal, and a generated plan is a starting point rather
+ * than a cage. These cover the two things you cannot do with a single plan.
+ */
+test("a person can keep several plans with different goals", async ({ page }) => {
+  await completeOnboarding(page);
+  await expect(page.getByRole("button", { name: "Start workout" })).toBeVisible({
+    timeout: 20_000,
+  });
+
+  await page.goto("/plans");
+  await expect(page.getByText("Strength Block")).toBeVisible({ timeout: 20_000 });
+
+  // Add a second plan for a different goal, in the same setup.
+  await page.getByRole("button", { name: "New plan" }).click();
+  await page.getByRole("button", { name: /Improve mobility/ }).click();
+  await page.getByRole("button", { name: "Build it for me" }).click();
+  await page.waitForURL("**/");
+
+  await page.goto("/plans");
+  // Both survive: the first is not replaced by the second.
+  await expect(page.getByText("Strength Block")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("Mobility Flow")).toBeVisible();
+
+  // And the new one is what Today offers.
+  await expect(page.getByText("Current plan")).toBeVisible();
+
+  // Switching back is one tap.
+  await page
+    .getByRole("button", { name: "Train this today" })
+    .first()
+    .click();
+  await page.waitForURL("**/");
+  await expect(page.getByRole("button", { name: "Start workout" })).toBeVisible({
+    timeout: 20_000,
+  });
+});
+
+test("a person can build a plan from scratch with their own sets and reps", async ({ page }) => {
+  await completeOnboarding(page);
+  await expect(page.getByRole("button", { name: "Start workout" })).toBeVisible({
+    timeout: 20_000,
+  });
+
+  await page.goto("/plans/new");
+  await page.getByPlaceholder(/name it for you/).fill("Saturday session");
+  await page.getByRole("button", { name: "Start empty and pick my own" }).click();
+
+  // Lands straight in the editor with nothing in it.
+  await page.waitForURL("**/plan/**");
+  await expect(page.getByText("Nothing here yet.")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "Add something first" })).toBeDisabled();
+
+  // The whole library is browsable, not just what the generator would pick.
+  await page.getByRole("button", { name: "+ Add exercise" }).click();
+  const search = page.getByPlaceholder(/Search all \d+ exercises/);
+  await expect(search).toBeVisible();
+  await search.fill("Barbell Squat");
+  await page.getByRole("button", { name: /^Barbell Squat/ }).first().click();
+
+  await expect(page.getByText("tap to swap")).toBeVisible({ timeout: 15_000 });
+
+  // Custom sets, reps and rest.
+  const setsBefore = await page.getByText(/\d+ sets/).first().innerText();
+  await page.getByRole("button", { name: "Increase sets" }).first().click();
+  await expect(page.getByText(/\d+ sets/).first()).not.toHaveText(setsBefore);
+
+  await page.getByRole("button", { name: "Increase reps" }).first().click();
+  await page.getByRole("button", { name: "Increase rest" }).first().click();
+
+  // A second day, so it is a real plan rather than one session.
+  // The button reads "+ Day" but carries a fuller aria-label for screen readers.
+  await page.getByRole("button", { name: "Add a day" }).click();
+  await expect(page.getByRole("button", { name: "Day 2" })).toBeVisible();
+
+  // And it is now startable.
+  await page.getByRole("button", { name: "Day 1" }).click();
+  await expect(page.getByRole("button", { name: /^Start · \d+ min/ })).toBeEnabled({
+    timeout: 15_000,
+  });
 });

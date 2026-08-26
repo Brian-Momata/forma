@@ -13,7 +13,7 @@ export default function EditSetupPage() {
   const ready = useBootstrap();
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const { setups, upsertSetup, regeneratePlan, refresh } = useApp();
+  const { setups, upsertSetup, regenerateForSetup, refresh } = useApp();
 
   const setup = setups.find((s) => s.id === (params.id as SetupId));
 
@@ -36,7 +36,7 @@ export default function EditSetupPage() {
           const saved = await upsertSetup(next);
           // Equipment changed means the situation changed, so the plan must be
           // rebuilt -- that is the whole premise.
-          await regeneratePlan(saved);
+          await regenerateForSetup(saved);
           router.replace("/setups");
         }}
         onDelete={async () => {

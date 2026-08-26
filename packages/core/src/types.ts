@@ -269,6 +269,8 @@ export const Plan = z.object({
   setupId: SetupId,
   name: z.string().min(1),
   goal: Goal,
+  /** This plan's own schedule. One person can run plans of different shapes at once. */
+  schedule: Schedule,
   tier: EquipmentTier,
   /** Short, human sentence explaining why this plan looks the way it does. */
   rationale: z.string(),

@@ -1,20 +1,28 @@
 "use client";
 
 import { create } from "zustand";
-import type { Library, Plan, Profile, Session, Setup, SetupId } from "@form/core";
+import type { Library, Plan, PlanId, Profile, Session, Setup, SetupId } from "@form/core";
 
 import { loadLibrary } from "@/lib/library";
 import {
+  createCustomPlan,
+  createGeneratedPlan,
   defaultProfile,
-  generateAndSavePlan,
+  deletePlan,
+  duplicatePlan,
+  getActivePlan,
   getActiveSetup,
   getProfile,
   listPlans,
   listSessions,
   listSetups,
+  regenerateSetupPlan,
   saveProfile,
+  savePlan,
   saveSetup,
+  setActivePlanId,
   setActiveSetupId,
+  type PlanRequest,
 } from "@/db/repo";
 
 interface AppStore {
@@ -25,13 +33,27 @@ interface AppStore {
   plans: Plan[];
   sessions: Session[];
   activeSetup: Setup | null;
+  activePlan: Plan | null;
 
   load(): Promise<void>;
+  refresh(): Promise<void>;
+
   updateProfile(patch: Partial<Profile>): Promise<void>;
+
   upsertSetup(setup: Setup): Promise<Setup>;
   activateSetup(id: SetupId): Promise<void>;
-  regeneratePlan(setup?: Setup): Promise<Plan | null>;
-  refresh(): Promise<void>;
+
+  /** Rebuilds a setup's generated plan because the situation itself changed. */
+  regenerateForSetup(setup?: Setup): Promise<Plan | null>;
+  /** Rebuilds every generated plan, for changes that affect them all. */
+  regenerateAll(): Promise<void>;
+
+  addGeneratedPlan(setup: Setup, request: PlanRequest): Promise<Plan | null>;
+  addCustomPlan(setup: Setup, request: Required<PlanRequest>): Promise<Plan>;
+  copyPlan(plan: Plan): Promise<Plan>;
+  removePlan(id: PlanId): Promise<void>;
+  activatePlan(id: PlanId): Promise<void>;
+  updatePlan(plan: Plan): Promise<void>;
 }
 
 export const useApp = create<AppStore>((set, get) => ({
@@ -42,17 +64,20 @@ export const useApp = create<AppStore>((set, get) => ({
   plans: [],
   sessions: [],
   activeSetup: null,
+  activePlan: null,
 
   async load() {
     if (get().ready) return;
-    const [library, profile, setups, plans, sessions, activeSetup] = await Promise.all([
-      loadLibrary(),
-      getProfile(),
-      listSetups(),
-      listPlans(),
-      listSessions(),
-      getActiveSetup(),
-    ]);
+    const [library, profile, setups, plans, sessions, activeSetup, activePlan] =
+      await Promise.all([
+        loadLibrary(),
+        getProfile(),
+        listSetups(),
+        listPlans(),
+        listSessions(),
+        getActiveSetup(),
+        getActivePlan(),
+      ]);
     set({
       ready: true,
       library,
@@ -61,16 +86,18 @@ export const useApp = create<AppStore>((set, get) => ({
       plans,
       sessions,
       activeSetup: activeSetup ?? null,
+      activePlan: activePlan ?? null,
     });
   },
 
   async refresh() {
-    const [profile, setups, plans, sessions, activeSetup] = await Promise.all([
+    const [profile, setups, plans, sessions, activeSetup, activePlan] = await Promise.all([
       getProfile(),
       listSetups(),
       listPlans(),
       listSessions(),
       getActiveSetup(),
+      getActivePlan(),
     ]);
     set({
       profile: profile ?? null,
@@ -78,6 +105,7 @@ export const useApp = create<AppStore>((set, get) => ({
       plans,
       sessions,
       activeSetup: activeSetup ?? null,
+      activePlan: activePlan ?? null,
     });
   },
 
@@ -90,29 +118,71 @@ export const useApp = create<AppStore>((set, get) => ({
 
   async upsertSetup(setup) {
     const saved = await saveSetup(setup);
-    const setups = await listSetups();
-    set({ setups });
+    set({ setups: await listSetups() });
     if (get().activeSetup?.id === saved.id) set({ activeSetup: saved });
     return saved;
   },
 
   async activateSetup(id) {
     await setActiveSetupId(id);
-    const setups = get().setups;
-    set({ activeSetup: setups.find((s) => s.id === id) ?? null });
+    set({ activeSetup: get().setups.find((s) => s.id === id) ?? null });
   },
 
-  /**
-   * Rebuilds the plan for a situation. The situation is the input, so changing
-   * a setup's equipment is expected to produce a materially different plan.
-   */
-  async regeneratePlan(setup) {
+  async regenerateForSetup(setup) {
     const { library, profile } = get();
     const target = setup ?? get().activeSetup;
     if (!library || !profile || !target) return null;
 
-    const plan = await generateAndSavePlan(library, profile, target);
-    set({ plans: await listPlans() });
+    const plan = await regenerateSetupPlan(library, profile, target);
+    await get().refresh();
     return plan;
+  },
+
+  /**
+   * Used for changes that invalidate every generated plan at once -- a new
+   * injury to work around, say. Hand-edited plans are left alone.
+   */
+  async regenerateAll() {
+    const { library, profile, setups } = get();
+    if (!library || !profile) return;
+    for (const setup of setups) {
+      await regenerateSetupPlan(library, profile, setup);
+    }
+    await get().refresh();
+  },
+
+  async addGeneratedPlan(setup, request) {
+    const { library, profile } = get();
+    if (!library || !profile) return null;
+    const plan = await createGeneratedPlan(library, profile, setup, request);
+    await get().refresh();
+    return plan;
+  },
+
+  async addCustomPlan(setup, request) {
+    const plan = await createCustomPlan(setup, request);
+    await get().refresh();
+    return plan;
+  },
+
+  async copyPlan(plan) {
+    const copy = await duplicatePlan(plan);
+    await get().refresh();
+    return copy;
+  },
+
+  async removePlan(id) {
+    await deletePlan(id);
+    await get().refresh();
+  },
+
+  async activatePlan(id) {
+    await setActivePlanId(id);
+    await get().refresh();
+  },
+
+  async updatePlan(plan) {
+    await savePlan(plan);
+    await get().refresh();
   },
 }));

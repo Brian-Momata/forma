@@ -4,6 +4,8 @@ import type { Library } from "./library/index.ts";
 import { eligibleForPattern, type SelectionContext } from "./selection.ts";
 import type {
   Exercise,
+  Goal,
+  Limitation,
   Pattern,
   Plan,
   PlanDay,
@@ -11,6 +13,7 @@ import type {
   PlanId,
   Prescription,
   Profile,
+  Schedule,
   Setup,
 } from "./types.ts";
 
@@ -307,6 +310,16 @@ function fitDay(
 export interface GenerateOptions {
   now?: number;
   planId?: string;
+  /**
+   * Overrides the profile's goal and schedule.
+   *
+   * A person is not one goal. Someone can run a strength plan at the gym and a
+   * mobility plan at home in the same week, so the goal belongs to the plan
+   * and the profile only supplies the default.
+   */
+  goal?: Goal;
+  schedule?: Schedule;
+  name?: string;
 }
 
 /**
@@ -323,13 +336,10 @@ export function generatePlan(
   options: GenerateOptions = {}
 ): Plan {
   const now = options.now ?? 0;
+  const goal = options.goal ?? profile.goal;
+  const schedule = options.schedule ?? profile.schedule;
   const tier = resolveTier(setup.equipment);
-  const arch = resolveArchetype(
-    profile.goal,
-    tier,
-    profile.experience,
-    profile.schedule.daysPerWeek
-  );
+  const arch = resolveArchetype(goal, tier, profile.experience, schedule.daysPerWeek);
 
   const ctx: SelectionContext = {
     setup,
@@ -342,11 +352,11 @@ export function generatePlan(
     seen: new Map(),
     rand: mulberry32(
       hashSeed([
-        profile.goal,
+        goal,
         tier,
         profile.experience,
-        String(profile.schedule.daysPerWeek),
-        String(profile.schedule.minutesPerSession),
+        String(schedule.daysPerWeek),
+        String(schedule.minutesPerSession),
         [...profile.limitations].sort().join(","),
         [...setup.equipment].sort().join(","),
         setup.id,
@@ -354,7 +364,7 @@ export function generatePlan(
     ),
   };
 
-  const budgetSec = profile.schedule.minutesPerSession * 60;
+  const budgetSec = schedule.minutesPerSession * 60;
   const days: PlanDay[] = [];
   let usedFallback = false;
 
@@ -395,13 +405,14 @@ export function generatePlan(
   });
 
   return {
-    id: (options.planId ?? `plan-${hashSeed([setup.id, profile.goal, String(now)])}`) as PlanId,
+    id: (options.planId ?? `plan-${hashSeed([setup.id, goal, String(now)])}`) as PlanId,
     setupId: setup.id,
-    name: planName(profile, arch),
-    goal: profile.goal,
+    name: options.name?.trim() || planName(goal, arch),
+    goal,
+    schedule,
     tier,
-    rationale: rationale(profile, setup, arch, usedFallback),
-    tags: tags(profile, setup, arch),
+    rationale: rationale(goal, schedule, profile.limitations, setup, arch, usedFallback),
+    tags: tags(schedule, profile.limitations, setup, arch),
     days,
     week: 1,
     generated: true,
@@ -410,27 +421,29 @@ export function generatePlan(
   };
 }
 
-function planName(profile: Profile, arch: Archetype): string {
-  const byGoal: Record<Profile["goal"], string> = {
+function planName(goal: Goal, arch: Archetype): string {
+  const byGoal: Record<Goal, string> = {
     strength: "Strength Block",
     "fat-loss": "Lean Circuit",
     mobility: "Mobility Flow",
     endurance: "Engine Builder",
     general: "Full Body Reset",
   };
-  return arch.days.length >= 4 ? `${byGoal[profile.goal]} · Split` : byGoal[profile.goal];
+  return arch.days.length >= 4 ? `${byGoal[goal]} · Split` : byGoal[goal];
 }
 
 /** A plain sentence explaining why the plan looks the way it does. */
 function rationale(
-  profile: Profile,
+  goal: Goal,
+  schedule: Schedule,
+  limitations: readonly Limitation[],
   setup: Setup,
   arch: Archetype,
   usedFallback: boolean
 ): string {
   const parts: string[] = [
     `Built for ${setup.name.toLowerCase()} with ${arch.tierLabel}`,
-    `${profile.schedule.daysPerWeek} days a week at ${profile.schedule.minutesPerSession} minutes`,
+    `${schedule.daysPerWeek} days a week at ${schedule.minutesPerSession} minutes`,
   ];
 
   if (arch.reps) parts.push(`${arch.reps[0]}-${arch.reps[1]} reps with ${arch.restSec}s rest`);
@@ -443,8 +456,8 @@ function rationale(
   };
   parts.push(how[arch.progression]);
 
-  if (profile.limitations.length > 0) {
-    parts.push(`working around ${profile.limitations.join(" and ").replace(/-/g, " ")}`);
+  if (limitations.length > 0) {
+    parts.push(`working around ${limitations.join(" and ").replace(/-/g, " ")}`);
   }
   if (usedFallback) {
     parts.push("with a few slots swapped to what this setup can actually train");
@@ -453,10 +466,42 @@ function rationale(
   return `${parts.join(", ")}.`;
 }
 
-function tags(profile: Profile, setup: Setup, arch: Archetype): string[] {
+function tags(
+  schedule: Schedule,
+  limitations: readonly Limitation[],
+  setup: Setup,
+  arch: Archetype
+): string[] {
   const out = [setup.location === "gym" ? "Gym" : setup.location === "home" ? "Home" : "Outdoors"];
   out.push(arch.tierLabel === "bodyweight only" ? "No equipment" : arch.tierLabel);
-  for (const l of profile.limitations) out.push(`${l.replace(/-/g, " ")}-friendly`);
-  out.push(`${profile.schedule.minutesPerSession} min`);
+  for (const l of limitations) out.push(`${l.replace(/-/g, " ")}-friendly`);
+  out.push(`${schedule.minutesPerSession} min`);
   return out;
+}
+
+/**
+ * A plan with nothing in it, for someone building their own from scratch.
+ *
+ * Deliberately not "generated": it carries no rationale we can stand behind,
+ * because we did not decide anything about it.
+ */
+export function emptyPlan(
+  setup: Setup,
+  options: { planId: string; name: string; goal: Goal; schedule: Schedule; now: number }
+): Plan {
+  return {
+    id: options.planId as PlanId,
+    setupId: setup.id,
+    name: options.name,
+    goal: options.goal,
+    schedule: options.schedule,
+    tier: resolveTier(setup.equipment),
+    rationale: "Built by you.",
+    tags: [],
+    days: [{ name: "Day 1", weekday: null, exercises: [] }],
+    week: 1,
+    generated: false,
+    createdAt: options.now,
+    updatedAt: options.now,
+  };
 }

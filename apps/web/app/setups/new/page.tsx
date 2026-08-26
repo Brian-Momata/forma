@@ -12,7 +12,7 @@ import { useApp } from "@/store/app";
 export default function NewSetupPage() {
   useBootstrap();
   const router = useRouter();
-  const { upsertSetup, activateSetup, regeneratePlan } = useApp();
+  const { upsertSetup, activateSetup, regenerateForSetup } = useApp();
 
   // Timestamps are stamped on save, not during render.
   const blank: Setup = {
@@ -33,7 +33,7 @@ export default function NewSetupPage() {
         onSave={async (setup) => {
           const saved = await upsertSetup({ ...setup, createdAt: Date.now() });
           await activateSetup(saved.id);
-          await regeneratePlan(saved);
+          await regenerateForSetup(saved);
           router.replace("/");
         }}
       />

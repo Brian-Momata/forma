@@ -28,7 +28,7 @@ export default function OnboardingPage() {
   useBootstrap();
   const updateProfile = useApp((s) => s.updateProfile);
   const upsertSetup = useApp((s) => s.upsertSetup);
-  const regeneratePlan = useApp((s) => s.regeneratePlan);
+  const regenerateForSetup = useApp((s) => s.regenerateForSetup);
 
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Answers>({ place: ["home"] });
@@ -125,7 +125,7 @@ export default function OnboardingPage() {
       const saved = await upsertSetup(setup);
       await setActiveSetupId(saved.id);
       await useApp.getState().activateSetup(saved.id);
-      await regeneratePlan(saved);
+      await regenerateForSetup(saved);
       router.replace("/");
     } finally {
       setBusy(false);

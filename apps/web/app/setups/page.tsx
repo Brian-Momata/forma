@@ -12,13 +12,19 @@ import { useApp } from "@/store/app";
 export default function SetupsPage() {
   const ready = useBootstrap();
   const router = useRouter();
-  const { setups, activeSetup, activateSetup, regeneratePlan } = useApp();
+  const { setups, plans, activeSetup, activateSetup, activatePlan, regenerateForSetup } =
+    useApp();
 
   const switchTo = async (id: (typeof setups)[number]["id"]) => {
     await activateSetup(id);
     const setup = setups.find((s) => s.id === id);
-    // Switching situations switches plans; build one if this setup has none.
-    if (setup) await regeneratePlan(setup);
+    if (!setup) return;
+
+    // Switching where you are switches what you train. Use a plan this setup
+    // already has; only build one if it has none at all.
+    const existing = plans.filter((p) => p.setupId === id);
+    if (existing[0]) await activatePlan(existing[0].id);
+    else await regenerateForSetup(setup);
     router.push("/");
   };
 

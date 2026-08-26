@@ -26,7 +26,7 @@ const LIMITATIONS: Limitation[] = ["knees", "lower-back", "shoulders", "wrists",
 export default function YouPage() {
   const ready = useBootstrap();
   const router = useRouter();
-  const { profile, updateProfile, regeneratePlan, activeSetup, refresh } = useApp();
+  const { profile, updateProfile, regenerateAll, refresh } = useApp();
   const fileRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -41,10 +41,19 @@ export default function YouPage() {
     );
   }
 
-  /** Anything that changes the programme has to rebuild the plan to take effect. */
-  const changeAndRebuild = async (patch: Parameters<typeof updateProfile>[0]) => {
-    await updateProfile(patch);
-    if (activeSetup) await regeneratePlan(activeSetup);
+  /**
+   * Goal and schedule here are only defaults for plans you create next -- they
+   * live on each plan, so changing them must not rewrite plans you already have.
+   */
+  const setDefault = updateProfile;
+
+  /**
+   * Limitations are different: they are a safety input to every generated plan,
+   * so they rebuild all of them. Hand-edited plans are left alone.
+   */
+  const changeLimitations = async (limitations: Limitation[]) => {
+    await updateProfile({ limitations });
+    await regenerateAll();
   };
 
   const download = async () => {
@@ -77,27 +86,31 @@ export default function YouPage() {
           <Display size="title">You</Display>
         </div>
 
-        <Kicker className="px-[22px] pb-3 pt-8">Goal</Kicker>
+        <Kicker className="px-[22px] pb-1 pt-8">Default goal</Kicker>
+        <p className="px-[22px] pb-3 text-[12px] leading-[1.5] text-t5">
+          Used when you create a new plan. Each plan keeps its own goal, so changing
+          this never rewrites a plan you already have.
+        </p>
         <div className="flex flex-wrap gap-2 px-[22px]">
           {GOALS.map((g) => (
             <Chip
               key={g.value}
               on={profile.goal === g.value}
-              onClick={() => void changeAndRebuild({ goal: g.value })}
+              onClick={() => void setDefault({ goal: g.value })}
             >
               {g.label}
             </Chip>
           ))}
         </div>
 
-        <Kicker className="px-[22px] pb-3 pt-8">Each week</Kicker>
+        <Kicker className="px-[22px] pb-3 pt-8">Default schedule</Kicker>
         <div className="flex flex-wrap gap-2 px-[22px]">
           {[2, 3, 4, 5, 6].map((days) => (
             <Chip
               key={days}
               on={profile.schedule.daysPerWeek === days}
               onClick={() =>
-                void changeAndRebuild({
+                void setDefault({
                   schedule: { ...profile.schedule, daysPerWeek: days },
                 })
               }
@@ -112,7 +125,7 @@ export default function YouPage() {
               key={minutes}
               on={profile.schedule.minutesPerSession === minutes}
               onClick={() =>
-                void changeAndRebuild({
+                void setDefault({
                   schedule: { ...profile.schedule, minutesPerSession: minutes },
                 })
               }
@@ -134,11 +147,11 @@ export default function YouPage() {
                 key={limit}
                 on={on}
                 onClick={() =>
-                  void changeAndRebuild({
-                    limitations: on
+                  void changeLimitations(
+                    on
                       ? profile.limitations.filter((l) => l !== limit)
-                      : [...profile.limitations, limit],
-                  })
+                      : [...profile.limitations, limit]
+                  )
                 }
               >
                 {limit.replace("-", " ")}

@@ -17,14 +17,14 @@ const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
 export default function TodayPage() {
   const ready = useBootstrap();
   const router = useRouter();
-  const { profile, plans, sessions, activeSetup, library } = useApp();
+  const { profile, sessions, activeSetup, activePlan, library } = useApp();
 
   // No profile means nobody has been through onboarding on this device yet.
   useEffect(() => {
     if (ready && !profile) router.replace("/onboarding");
   }, [ready, profile, router]);
 
-  const plan = plans.find((p) => p.setupId === activeSetup?.id) ?? plans[0];
+  const plan = activePlan;
 
   const now = useNow();
   const days = plan ? summarise(plan) : [];
@@ -138,7 +138,7 @@ export default function TodayPage() {
                 className="pointer-events-none absolute left-[22px] top-4 px-[9px] py-[5px] text-[9.5px] font-extrabold uppercase tracking-[.16em]"
                 style={{ background: "var(--acc)", color: "var(--color-screen)" }}
               >
-                Today · {activeSetup?.name ?? "anywhere"} · {plan.tier.replace("-", " ")}
+                Today · {plan.name} · {plan.tier.replace("-", " ")}
               </div>
             </div>
 

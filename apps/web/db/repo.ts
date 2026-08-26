@@ -1,6 +1,9 @@
 import {
+  emptyPlan,
   generatePlan,
   type Feel,
+  type Goal,
+  type Schedule,
   type Library,
   type Plan,
   type PlanId,
@@ -124,30 +127,124 @@ export async function savePlan(plan: Plan): Promise<Plan> {
 
 export async function deletePlan(id: PlanId): Promise<void> {
   await db.plans.delete(id);
+  if ((await getActivePlanId()) === id) {
+    await db.meta.delete("activePlanId");
+  }
+}
+
+export interface PlanRequest {
+  goal?: Goal;
+  schedule?: Schedule;
+  name?: string;
 }
 
 /**
- * Builds and stores a plan for a situation.
+ * Rebuilds a setup's *generated* plan in place.
  *
- * Regenerating for a setup replaces that setup's generated plan but leaves
- * anything the person edited by hand alone -- a plan someone has customised is
- * theirs, not ours to overwrite.
+ * Used when the situation itself changes -- new equipment, a new limitation --
+ * because the plan was derived from those answers and is now wrong. Plans the
+ * person has edited are never touched: those are theirs, not ours to overwrite.
  */
-export async function generateAndSavePlan(
+export async function regenerateSetupPlan(
   library: Library,
   profile: Profile,
   setup: Setup
-): Promise<Plan> {
+): Promise<Plan | null> {
   const existing = await plansForSetup(setup.id);
   const previous = existing.find((p) => p.generated);
+  if (existing.length > 0 && !previous) return null;
 
   const plan = generatePlan(library, profile, setup, {
     now: now(),
     planId: previous?.id ?? newId("plan"),
+    ...(previous ? { goal: previous.goal, schedule: previous.schedule, name: previous.name } : {}),
   });
 
   await db.plans.put(plan);
+  if (!previous) await setActivePlanId(plan.id);
   return plan;
+}
+
+/**
+ * Adds a new plan alongside whatever already exists.
+ *
+ * This is what lets one person train for more than one thing: a strength block
+ * at the gym and a mobility plan at home are two plans, not a setting someone
+ * has to keep flipping.
+ */
+export async function createGeneratedPlan(
+  library: Library,
+  profile: Profile,
+  setup: Setup,
+  request: PlanRequest = {}
+): Promise<Plan> {
+  const plan = generatePlan(library, profile, setup, {
+    now: now(),
+    planId: newId("plan"),
+    ...request,
+  });
+  await db.plans.put(plan);
+  await setActivePlanId(plan.id);
+  return plan;
+}
+
+/** An empty plan for someone who would rather build it themselves. */
+export async function createCustomPlan(
+  setup: Setup,
+  request: Required<Pick<PlanRequest, "name" | "goal" | "schedule">>
+): Promise<Plan> {
+  const plan = emptyPlan(setup, {
+    planId: newId("plan"),
+    name: request.name,
+    goal: request.goal,
+    schedule: request.schedule,
+    now: now(),
+  });
+  await db.plans.put(plan);
+  await setActivePlanId(plan.id);
+  return plan;
+}
+
+/** Copying a plan is the easiest way to try a variation without losing the original. */
+export async function duplicatePlan(plan: Plan): Promise<Plan> {
+  const copy: Plan = {
+    ...plan,
+    id: newId("plan") as PlanId,
+    name: `${plan.name} copy`,
+    // A copy is the person's from the moment it exists, so regeneration for
+    // the setup will not silently rewrite it.
+    generated: false,
+    week: 1,
+    createdAt: now(),
+    updatedAt: now(),
+  };
+  await db.plans.put(copy);
+  await setActivePlanId(copy.id);
+  return copy;
+}
+
+export async function getActivePlanId(): Promise<PlanId | undefined> {
+  const row = await db.meta.get("activePlanId");
+  return row?.value as PlanId | undefined;
+}
+
+export async function setActivePlanId(id: PlanId): Promise<void> {
+  await db.meta.put({ key: "activePlanId", value: id });
+}
+
+/** The plan Today should show, falling back sensibly if it was deleted. */
+export async function getActivePlan(): Promise<Plan | undefined> {
+  const id = await getActivePlanId();
+  if (id) {
+    const found = await db.plans.get(id);
+    if (found) return found;
+  }
+  const setup = await getActiveSetup();
+  if (setup) {
+    const forSetup = await plansForSetup(setup.id);
+    if (forSetup[0]) return forSetup[0];
+  }
+  return (await listPlans())[0];
 }
 
 /* ----------------------------------------------------------------- sessions */
