@@ -2,10 +2,10 @@
   "source": "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json",
   "license": "Unlicense (public domain)",
   "imageBase": "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/",
-  "builtAt": "2026-08-26T11:05:56.610Z",
+  "builtAt": "2026-08-26T11:13:57.764Z",
   "sourceCount": 873,
-  "supplements": 32,
-  "total": 853,
-  "core": 84,
-  "checksum": "a9d89b59d2f9f436"
+  "supplements": 36,
+  "total": 857,
+  "core": 88,
+  "checksum": "48f48c310b03a68e"
 }

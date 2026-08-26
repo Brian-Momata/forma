@@ -101,6 +101,7 @@ export const SUPPLEMENTS: Draft[] = [
     cues: ["Thighs parallel, back flat to the wall", "Push through the heels, breathe steadily"],
     defaults: time(2, 40, 45),
   }),
+  // Also deliberately knee-safe: the bench caps depth. See Assisted_Squat.
   ex("Bodyweight_Box_Squat", "Box Squat to Bench", {
     pattern: "squat",
     requires: ["bench"],
@@ -109,6 +110,12 @@ export const SUPPLEMENTS: Draft[] = [
     cues: ["Sit back to the box, don't drop", "Stand up without rocking forward"],
     defaults: reps(3, 12, 60),
   }),
+  // Deliberately carries no knee contraindication: holding a support and
+  // limiting depth is the standard knee-friendly squat regression. Together
+  // with the box squat below, this is the ONLY thing that keeps the squat
+  // slot fillable for someone who flagged their knees -- every dataset squat
+  // is excluded for them. Do not add "knees" here without providing another
+  // knee-safe squat, or the pattern falls through to lunge and then fails.
   ex("Assisted_Squat", "Assisted Squat", {
     pattern: "squat",
     primaryMuscles: ["quadriceps"],
@@ -236,6 +243,46 @@ export const SUPPLEMENTS: Draft[] = [
     contraindications: ["shoulders"],
     cues: ["Stand on the band, brace the ribs down", "Press until the arms are fully long"],
     defaults: reps(3, 12, 60),
+  }),
+
+  /* ---------------- band work ----------------
+     Owning bands must actually change the plan. Without a band option for the
+     leg and press patterns, a "bands only" setup generates the same session as
+     owning nothing at all. */
+  ex("Band_Squat", "Band Squat", {
+    pattern: "squat",
+    requires: ["bands"],
+    primaryMuscles: ["quadriceps"],
+    secondaryMuscles: ["glutes"],
+    contraindications: ["knees"],
+    cues: ["Stand on the band, handles at the shoulders", "Sit down between the hips, chest tall"],
+    defaults: reps(3, 14, 60),
+  }),
+  ex("Band_Romanian_Deadlift", "Band Romanian Deadlift", {
+    pattern: "hinge",
+    requires: ["bands"],
+    primaryMuscles: ["hamstrings"],
+    secondaryMuscles: ["glutes"],
+    cues: ["Stand on the band, hinge from the hips", "Keep tension the whole way up"],
+    defaults: reps(3, 14, 60),
+  }),
+  ex("Band_Chest_Press", "Band Chest Press", {
+    pattern: "horizontal-push",
+    requires: ["bands"],
+    primaryMuscles: ["chest"],
+    secondaryMuscles: ["triceps", "shoulders"],
+    cues: ["Anchor the band behind you at chest height", "Press to full length, resist coming back"],
+    defaults: reps(3, 14, 60),
+  }),
+  ex("Band_Woodchop", "Band Woodchop", {
+    pattern: "rotation",
+    requires: ["bands"],
+    primaryMuscles: ["abdominals"],
+    secondaryMuscles: ["shoulders"],
+    unilateral: true,
+    contraindications: ["lower-back"],
+    cues: ["Turn from the ribs, hips stay quiet", "Arms stay long, let the trunk do it"],
+    defaults: reps(2, 12, 45),
   }),
 
   /* ---------------- horizontal pull (near-empty at bodyweight) ---------------- */
