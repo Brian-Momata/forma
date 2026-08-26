@@ -101,99 +101,104 @@ export function ExerciseSheet({ library, setup, profile, current, onPick, onClos
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-[2px]">
-      <button type="button" aria-label="Close" className="flex-1 cursor-default" onClick={onClose} />
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px]">
+      {/* The sheet tracks the phone column, not the viewport: on a wide screen
+          the app is a centred 520px column, so a full-width sheet would slide
+          out from under it. Screen uses the same max width. */}
+      <div className="mx-auto flex h-full w-full max-w-[520px] flex-col justify-end">
+        <button type="button" aria-label="Close" className="flex-1 cursor-default" onClick={onClose} />
 
-      <div
-        className="flex max-h-[88dvh] flex-col overflow-hidden rounded-t-[26px] border-t border-hair-12 bg-screen"
-        style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom))" }}
-      >
-        <div className="mx-auto mb-4 mt-[18px] h-[3px] w-[38px] shrink-0 rounded-full bg-white/22" />
+        <div
+          className="flex max-h-[88dvh] flex-col overflow-hidden rounded-t-[26px] border-t border-hair-12 bg-screen"
+          style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom))" }}
+        >
+          <div className="mx-auto mb-4 mt-[18px] h-[3px] w-[38px] shrink-0 rounded-full bg-white/22" />
 
-        <div className="shrink-0 px-[22px] pb-3">
-          <Kicker>{current ? "Swap exercise" : "Add exercise"}</Kicker>
-          <Display size="upNext" weight={800} className="mt-2">
-            {current ? current.name : "Pick a movement"}
-          </Display>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={`Search all ${library.all.length} exercises`}
-            className="mt-4 h-[46px] w-full rounded-full border border-hair-14 bg-transparent px-4 text-[14px] text-t1 outline-none placeholder:text-t5 focus:border-acc"
-          />
-        </div>
+          <div className="shrink-0 px-[22px] pb-3">
+            <Kicker>{current ? "Swap exercise" : "Add exercise"}</Kicker>
+            <Display size="upNext" weight={800} className="mt-2">
+              {current ? current.name : "Pick a movement"}
+            </Display>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={`Search all ${library.all.length} exercises`}
+              className="mt-4 h-[46px] w-full rounded-full border border-hair-14 bg-transparent px-4 text-[14px] text-t1 outline-none placeholder:text-t5 focus:border-acc"
+            />
+          </div>
 
-        <div className="flex shrink-0 gap-2 overflow-x-auto px-[22px] pb-3">
-          {PATTERNS.map((p) => (
-            <button
-              key={p.value}
-              type="button"
-              onClick={() => setPattern(p.value)}
-              className="shrink-0 rounded-full border px-3 py-[6px] text-[12px] font-semibold transition-colors"
-              style={
-                pattern === p.value
-                  ? { background: "var(--acc)", borderColor: "var(--acc)", color: "var(--color-screen)" }
-                  : { borderColor: "rgba(255,255,255,.14)", color: "var(--color-t3)" }
-              }
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto border-t border-hair-08">
-          {results.items.length === 0 && (
-            <p className="px-[22px] py-8 text-center text-[13px] text-t4">
-              Nothing matches that.
-            </p>
-          )}
-
-          {results.items.map((exercise) => {
-            const flags = flagsFor(exercise);
-            return (
+          <div className="flex shrink-0 gap-2 overflow-x-auto px-[22px] pb-3">
+            {PATTERNS.map((p) => (
               <button
-                key={exercise.id}
+                key={p.value}
                 type="button"
-                onClick={() => onPick(exercise)}
-                className="flex w-full items-center gap-3 border-b border-hair-07 px-[22px] py-[14px] text-left transition-colors hover:bg-white/3"
+                onClick={() => setPattern(p.value)}
+                className="shrink-0 rounded-full border px-3 py-[6px] text-[12px] font-semibold transition-colors"
+                style={
+                  pattern === p.value
+                    ? { background: "var(--acc)", borderColor: "var(--acc)", color: "var(--color-screen)" }
+                    : { borderColor: "rgba(255,255,255,.14)", color: "var(--color-t3)" }
+                }
               >
-                <div className="min-w-0 flex-1">
-                  <div
-                    className="truncate text-[15px] font-semibold tracking-[-.01em]"
-                    style={{ color: flags.length ? "var(--color-t3)" : "var(--color-t1)" }}
-                  >
-                    {exercise.name}
-                  </div>
-                  <div className="mt-[3px] truncate text-[12px] text-t4">
-                    {exercise.pattern.replace(/-/g, " ")}
-                    {exercise.requires.length > 0
-                      ? ` · ${exercise.requires.join(", ").replace(/-/g, " ")}`
-                      : " · bodyweight"}
-                  </div>
-                  {flags.length > 0 && (
-                    <div className="mt-[5px] text-[11px] font-semibold uppercase tracking-[.08em] text-[#FFB020]">
-                      {flags.join(" · ")}
-                    </div>
-                  )}
-                </div>
-                <div className="shrink-0 text-[11px] font-semibold uppercase tracking-[.1em] text-t5">
-                  {exercise.kind === "time" ? "hold" : "reps"}
-                </div>
+                {p.label}
               </button>
-            );
-          })}
+            ))}
+          </div>
 
-          {results.total > LIMIT && (
-            <p className="px-[22px] py-5 text-center text-[12px] text-t5">
-              Showing {LIMIT} of {results.total}. Search or filter to narrow it down.
-            </p>
-          )}
-        </div>
+          <div className="min-h-0 flex-1 overflow-y-auto border-t border-hair-08">
+            {results.items.length === 0 && (
+              <p className="px-[22px] py-8 text-center text-[13px] text-t4">
+                Nothing matches that.
+              </p>
+            )}
 
-        <div className="shrink-0 px-[22px] pt-4">
-          <PillButton variant="outline" className="w-full" onClick={onClose}>
-            Cancel
-          </PillButton>
+            {results.items.map((exercise) => {
+              const flags = flagsFor(exercise);
+              return (
+                <button
+                  key={exercise.id}
+                  type="button"
+                  onClick={() => onPick(exercise)}
+                  className="flex w-full items-center gap-3 border-b border-hair-07 px-[22px] py-[14px] text-left transition-colors hover:bg-white/3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className="truncate text-[15px] font-semibold tracking-[-.01em]"
+                      style={{ color: flags.length ? "var(--color-t3)" : "var(--color-t1)" }}
+                    >
+                      {exercise.name}
+                    </div>
+                    <div className="mt-[3px] truncate text-[12px] text-t4">
+                      {exercise.pattern.replace(/-/g, " ")}
+                      {exercise.requires.length > 0
+                        ? ` · ${exercise.requires.join(", ").replace(/-/g, " ")}`
+                        : " · bodyweight"}
+                    </div>
+                    {flags.length > 0 && (
+                      <div className="mt-[5px] text-[11px] font-semibold uppercase tracking-[.08em] text-[#FFB020]">
+                        {flags.join(" · ")}
+                      </div>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-[11px] font-semibold uppercase tracking-[.1em] text-t5">
+                    {exercise.kind === "time" ? "hold" : "reps"}
+                  </div>
+                </button>
+              );
+            })}
+
+            {results.total > LIMIT && (
+              <p className="px-[22px] py-5 text-center text-[12px] text-t5">
+                Showing {LIMIT} of {results.total}. Search or filter to narrow it down.
+              </p>
+            )}
+          </div>
+
+          <div className="shrink-0 px-[22px] pt-4">
+            <PillButton variant="outline" className="w-full" onClick={onClose}>
+              Cancel
+            </PillButton>
+          </div>
         </div>
       </div>
     </div>
