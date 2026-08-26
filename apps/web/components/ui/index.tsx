@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 
 /**
@@ -154,14 +155,24 @@ export function Segments({
   filled,
   tone = "accent",
   className = "",
+  label,
 }: {
   total: number;
   filled: number;
   tone?: "accent" | "rest";
   className?: string;
+  /** What is being counted, so a screen reader gets more than bare divs. */
+  label?: string;
 }) {
   return (
-    <div className={`flex gap-[3px] ${className}`}>
+    <div
+      className={`flex gap-[3px] ${className}`}
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={Math.max(0, total)}
+      aria-valuenow={Math.max(0, Math.min(total, filled))}
+      aria-label={label ?? `${filled} of ${total}`}
+    >
       {Array.from({ length: Math.max(0, total) }, (_, i) => (
         <div key={i} className="relative h-[2px] flex-1 bg-white/13">
           {i < filled && (
@@ -179,13 +190,22 @@ export function Segments({
 export function ProgressBar({
   value,
   tone = "accent",
+  label,
 }: {
   value: number;
   tone?: "accent" | "rest";
+  label?: string;
 }) {
   const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
   return (
-    <div className="relative mt-[18px] h-[3px] w-full bg-white/12">
+    <div
+      className="relative mt-[18px] h-[3px] w-full bg-white/12"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={pct}
+      aria-label={label ?? "Progress"}
+    >
       <div
         className="absolute inset-y-0 left-0 transition-[width] duration-200 ease-linear"
         style={{ width: `${pct}%`, background: tone === "rest" ? "var(--rest)" : "var(--acc)" }}
@@ -273,5 +293,88 @@ export function Tag({ children }: { children: ReactNode }) {
     >
       {children}
     </div>
+  );
+}
+
+
+/* ------------------------------------------------------------------- states */
+
+/**
+ * Data is on its way -- or it failed and is not coming.
+ *
+ * The failure branch matters: bootstrap can genuinely fail offline, and a
+ * spinner that never resolves is the worst way to say so.
+ */
+export function Loading({
+  message = "Loading…",
+  error,
+  onRetry,
+}: {
+  message?: string;
+  error?: string | null;
+  onRetry?: () => void;
+}) {
+  if (error) {
+    return (
+      <Screen>
+        <div className="flex flex-1 flex-col justify-center px-[22px]">
+          <Display size="title">Not loaded</Display>
+          <p className="mt-3 text-[14px] leading-relaxed text-t3">{error}</p>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-8 flex h-[58px] items-center justify-center rounded-full text-[15px] font-bold"
+              style={{ background: "var(--acc)", color: "var(--color-screen)" }}
+            >
+              Try again
+            </button>
+          )}
+        </div>
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen>
+      <div className="flex flex-1 items-center justify-center px-6">
+        <div className="text-[13px] text-t4">{message}</div>
+      </div>
+    </Screen>
+  );
+}
+
+/**
+ * The thing you asked for is not here.
+ *
+ * Worth its own component because collapsing it into the loading state is what
+ * turned a deleted plan's bookmark into a screen that spins forever with no way
+ * out -- the tab bar is not rendered on these routes either.
+ */
+export function NotFound({
+  title,
+  body,
+  href,
+  label,
+}: {
+  title: string;
+  body: string;
+  href: string;
+  label: string;
+}) {
+  return (
+    <Screen>
+      <div className="flex flex-1 flex-col justify-center px-[22px]">
+        <Display size="title">{title}</Display>
+        <p className="mt-3 text-[14px] leading-relaxed text-t3">{body}</p>
+        <Link
+          href={href}
+          className="mt-8 flex h-[58px] items-center justify-center rounded-full text-[15px] font-bold"
+          style={{ background: "var(--acc)", color: "var(--color-screen)" }}
+        >
+          {label}
+        </Link>
+      </div>
+    </Screen>
   );
 }

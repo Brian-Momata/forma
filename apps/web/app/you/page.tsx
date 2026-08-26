@@ -6,7 +6,7 @@ import type { Goal, Limitation } from "@form/core";
 
 import { Display, Kicker, PillButton, Screen, ScrollArea } from "@/components/ui";
 import { TabBar } from "@/components/ui/nav";
-import { exportAll, importAll, type ExportBundle } from "@/db/repo";
+import { ImportError, exportAll, importAll } from "@/db/repo";
 import { useBootstrap } from "@/lib/use-bootstrap";
 import { useApp } from "@/store/app";
 
@@ -63,19 +63,37 @@ export default function YouPage() {
     const a = document.createElement("a");
     a.href = url;
     a.download = `form-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    // Appended and revoked late on purpose: Firefox and Safari abort a download
+    // whose anchor was never in the document or whose URL is revoked in the same
+    // tick. This is the one feature whose whole job is not losing a history.
+    a.style.display = "none";
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 0);
     setStatus("Exported.");
   };
 
   const upload = async (file: File) => {
+    setStatus(null);
     try {
-      const bundle = JSON.parse(await file.text()) as ExportBundle;
-      await importAll(bundle);
+      // Parsed, never cast: this is the only place a stranger's bytes reach the
+      // database, and the database is someone's whole training history.
+      const bundle = await importAll(JSON.parse(await file.text()));
       await refresh();
-      setStatus("Imported.");
-    } catch {
-      setStatus("That file could not be read.");
+      const counts = [
+        `${bundle.plans.length} ${bundle.plans.length === 1 ? "plan" : "plans"}`,
+        `${bundle.sessions.length} ${bundle.sessions.length === 1 ? "session" : "sessions"}`,
+      ].join(", ");
+      setStatus(`Imported ${counts}.`);
+    } catch (error) {
+      setStatus(
+        error instanceof ImportError
+          ? error.message
+          : "That file is not valid JSON, so it could not be read."
+      );
     }
   };
 
@@ -277,11 +295,15 @@ export default function YouPage() {
 
         <button
           type="button"
-          onClick={() => router.push("/onboarding")}
+          onClick={() => router.push("/onboarding?again=1")}
           className="mt-8 w-full border-t border-hair-07 px-[22px] py-5 text-left text-[13px] font-semibold text-t5 hover:text-t2"
         >
           Run onboarding again
         </button>
+        <p className="px-[22px] pb-2 text-[12px] leading-[1.5] text-t5">
+          Updates your current setup and rebuilds the plans we built. Your colours,
+          units and workout settings are kept.
+        </p>
 
         <p className="px-[22px] py-6 text-[11.5px] leading-[1.6] text-t5">
           FORM builds general fitness plans and is not medical advice. Stop if something

@@ -34,8 +34,10 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // Zoom stays available: blocking it fails WCAG 1.4.4, and it bites hardest on
+  // the small uppercase labels §10 already flags as low contrast. The
+  // double-tap-zoom problem this usually guards against is handled by the
+  // tap-highlight and touch rules in globals.css.
   viewportFit: "cover",
   themeColor: "#08090B",
 };

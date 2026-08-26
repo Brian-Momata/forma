@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   isPermitted,
   substitutes,
@@ -73,16 +73,19 @@ export function ExerciseSheet({ library, setup, profile, current, onPick, onClos
       if (pattern !== "all") pool = pool.filter((e) => e.pattern === pattern);
     }
 
-    // Usable things first; the rest stay reachable underneath.
-    const ranked = [...pool].sort((a, b) => {
-      const ap = isPermitted(a, ctx) ? 0 : 1;
-      const bp = isPermitted(b, ctx) ? 0 : 1;
-      if (ap !== bp) return ap - bp;
-      if (a.core !== b.core) return a.core ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
+    // Usable things first; the rest stay reachable underneath. The permission
+    // check is computed once per exercise rather than inside the comparator --
+    // it is not cheap, and a comparator runs it O(n log n) times on every
+    // keystroke across the whole library.
+    const ranked = pool
+      .map((e) => ({ e, rank: isPermitted(e, ctx) ? 0 : 1 }))
+      .sort((a, b) => {
+        if (a.rank !== b.rank) return a.rank - b.rank;
+        if (a.e.core !== b.e.core) return a.e.core ? -1 : 1;
+        return a.e.name.localeCompare(b.e.name);
+      });
 
-    return { items: ranked.slice(0, LIMIT), total: ranked.length };
+    return { items: ranked.slice(0, LIMIT).map((x) => x.e), total: ranked.length };
   }, [query, pattern, library, current, ctx]);
 
   /** Why an exercise would not be prescribed here. Empty when it is a clean fit. */
@@ -100,8 +103,29 @@ export function ExerciseSheet({ library, setup, profile, current, onPick, onClos
     return flags;
   };
 
+  // A2: a sheet that looks modal has to behave modally. <dialog> brings the
+  // focus trap, the Escape key and an inert background with it, none of which
+  // an overlay div has -- keyboard focus used to walk the plan editor behind it.
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const node = dialogRef.current;
+    if (node && !node.open) node.showModal();
+  }, []);
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px]">
+    <dialog
+      ref={dialogRef}
+      aria-label={current ? `Swap ${current.name}` : "Add an exercise"}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => {
+        // Clicks land on the backdrop only when they miss the panel itself.
+        if (e.target === dialogRef.current) onClose();
+      }}
+      className="fixed inset-0 z-50 m-0 h-full max-h-none w-full max-w-none bg-black/60 p-0 backdrop-blur-[2px] backdrop:bg-transparent"
+    >
       {/* The sheet tracks the phone column, not the viewport: on a wide screen
           the app is a centred 520px column, so a full-width sheet would slide
           out from under it. Screen uses the same max width. */}
@@ -201,6 +225,6 @@ export function ExerciseSheet({ library, setup, profile, current, onPick, onClos
           </div>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

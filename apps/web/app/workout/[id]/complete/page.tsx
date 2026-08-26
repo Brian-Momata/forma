@@ -40,6 +40,22 @@ export default function CompletePage() {
 
   const plan = plans.find((p) => p.id === planId);
 
+  /**
+   * The heaviest weight banked per movement this session.
+   *
+   * This is what teaches load progression what the person actually lifts -- the
+   * plan cannot guess, so the first "too easy" on a barbell plan learns it from
+   * here rather than promising a weight change it has no number for.
+   */
+  const loggedWeights = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const r of player?.records ?? []) {
+      if (r.skipped || r.weightKg === null || r.weightKg <= 0) continue;
+      out.set(r.exerciseId, Math.max(out.get(r.exerciseId) ?? 0, r.weightKg));
+    }
+    return out;
+  }, [player]);
+
   const stats = useMemo(() => {
     if (!player) return null;
     // Warm-ups are not training volume, and counting them here would disagree
@@ -83,7 +99,8 @@ export default function CompletePage() {
             plan,
             feel,
             { setup, limitations: profile.limitations, experience: profile.experience },
-            Date.now()
+            Date.now(),
+            loggedWeights
           );
           await savePlan(next);
         }
@@ -163,7 +180,14 @@ export default function CompletePage() {
         </div>
 
         <p className="mt-[14px] text-[13px] font-semibold leading-[1.5] opacity-72">
-          {progressionNote(feel, { tier: plan?.tier ?? "bodyweight" })}
+          {progressionNote(
+            feel,
+            { tier: plan?.tier ?? "bodyweight" },
+            loggedWeights.size > 0 ||
+              (plan?.days ?? []).some((d) =>
+                d.exercises.some((e) => (e.prescription.targetWeightKg ?? null) !== null)
+              )
+          )}
         </p>
 
         <div className="flex-1" />

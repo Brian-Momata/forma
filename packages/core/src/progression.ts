@@ -1,7 +1,15 @@
 import { TIERS, type ProgressionMethod } from "./archetypes.ts";
 import type { Library } from "./library/index.ts";
 import { stepChain, type SelectionContext } from "./selection.ts";
-import { assertNever, type Feel, type Plan, type PlanExercise, type Prescription } from "./types.ts";
+import {
+  assertNever,
+  type Exercise,
+  type ExerciseId,
+  type Feel,
+  type Plan,
+  type PlanExercise,
+  type Prescription,
+} from "./types.ts";
 
 /**
  * Turns the post-workout "too easy / just right / too hard" into next week's
@@ -18,6 +26,22 @@ const MAX_REPS = 25;
 const MIN_REPS = 3;
 const MAX_REST = 180;
 const REST_PENALTY_SEC = 15;
+const MAX_WEIGHT_KG = 500;
+
+/**
+ * The jump to make when a load-tier session felt easy.
+ *
+ * Conservative on purpose (ENGINEERING.md §1.4): a compound can absorb a plate
+ * change, an isolation movement usually cannot, and nobody was ever injured by
+ * a kilo they did not add.
+ */
+function loadStepKg(mechanic: Exercise["mechanic"]): number {
+  return mechanic === "compound" ? 2.5 : 1;
+}
+
+function bumpWeight(p: Prescription, current: number, step: number): Prescription {
+  return { ...p, targetWeightKg: Math.min(MAX_WEIGHT_KG, current + step) };
+}
 
 function bumpReps(p: Prescription, delta: number): Prescription {
   if (p.reps === undefined) return p;
@@ -42,12 +66,21 @@ function easier(item: PlanExercise): PlanExercise {
   };
 }
 
+/**
+ * The heaviest weight logged per exercise in the session just finished.
+ *
+ * This is what seeds load progression the first time: the plan cannot guess
+ * what someone squats, so it learns it from what they actually did.
+ */
+export type LoggedWeights = ReadonlyMap<ExerciseId | string, number>;
+
 export function applyFeedback(
   library: Library,
   plan: Plan,
   feel: Feel,
   ctx: SelectionContext,
-  now: number
+  now: number,
+  logged: LoggedWeights = new Map()
 ): Plan {
   const method: ProgressionMethod = TIERS[plan.tier].progression;
 
@@ -98,6 +131,28 @@ export function applyFeedback(
             return { ...item, prescription: bumpDuration(item.prescription, 10) };
           }
 
+          if (method === "load") {
+            // Where there is a bar to load, load it: keep the reps and move the
+            // weight, which is what the Complete screen promises and what the
+            // tier exists to express.
+            const known =
+              item.prescription.targetWeightKg ?? logged.get(item.exerciseId) ?? null;
+            if (known !== null) {
+              return {
+                ...item,
+                prescription: bumpWeight(
+                  item.prescription,
+                  known,
+                  loadStepKg(exercise.mechanic)
+                ),
+              };
+            }
+            // Nothing logged yet, so there is no load to add to. Reps until
+            // there is -- and the Complete screen says so rather than promising
+            // a weight change that cannot happen.
+            return { ...item, prescription: bumpReps(item.prescription, 2) };
+          }
+
           // The design's wording: add a set to the compound lifts.
           if (exercise.mechanic === "compound") {
             return { ...item, prescription: bumpSets(item.prescription, 1) };
@@ -115,10 +170,17 @@ export function applyFeedback(
 }
 
 /**
- * The sentence shown on the Complete screen. Wording follows the design, with
- * the "too easy" case adjusted to describe what actually happens on this tier.
+ * The sentence shown on the Complete screen.
+ *
+ * It must describe what `applyFeedback` will actually do -- on a load tier that
+ * depends on whether we know what the person lifted, so the caller passes that
+ * in rather than the screen promising a weight change that cannot happen.
  */
-export function progressionNote(feel: Feel, plan: Pick<Plan, "tier">): string {
+export function progressionNote(
+  feel: Feel,
+  plan: Pick<Plan, "tier">,
+  hasLoggedLoad = true
+): string {
   const method = TIERS[plan.tier].progression;
 
   switch (feel) {
@@ -126,7 +188,9 @@ export function progressionNote(feel: Feel, plan: Pick<Plan, "tier">): string {
       return method === "chain"
         ? "Next session moves you up to a harder variation."
         : method === "load"
-          ? "Next session keeps the reps and asks for more weight."
+          ? hasLoggedLoad
+            ? "Next session keeps the reps and asks for a little more weight."
+            : "Next session adds reps. Log the weight you lift and we can add load instead."
           : "Next session adds a set to your compound lifts.";
     case "too-hard":
       return "Next session trims a set and adds 15s to every rest.";

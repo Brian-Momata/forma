@@ -139,6 +139,15 @@ export const Prescription = z.object({
   reps: z.number().int().min(1).max(100).optional(),
   durationSec: z.number().int().min(5).max(600).optional(),
   restSec: z.number().int().min(0).max(300),
+  /**
+   * What to load the bar with, in kilograms, once we know.
+   *
+   * Null until the person has logged a weight for the movement: on the load
+   * tiers this is the whole progression, and without somewhere to put a number
+   * "add weight next week" is advice the app cannot act on. Always kilograms;
+   * the profile's unit is a display choice, never a storage one.
+   */
+  targetWeightKg: z.number().min(0).max(500).nullable().optional(),
 });
 export type Prescription = z.infer<typeof Prescription>;
 
@@ -222,7 +231,12 @@ export type Setup = z.infer<typeof Setup>;
 
 export const Schedule = z.object({
   daysPerWeek: z.number().int().min(1).max(7),
-  minutesPerSession: z.number().int().min(5).max(180),
+  /**
+   * Ten minutes is the floor because it is the shortest session the generator
+   * can fit honestly: below that the warm-up alone overruns the budget, and a
+   * warm-up is not the thing to cut (safety rule 3).
+   */
+  minutesPerSession: z.number().int().min(10).max(180),
 });
 export type Schedule = z.infer<typeof Schedule>;
 
@@ -307,6 +321,14 @@ export const Session = z.object({
   planId: PlanId,
   setupId: SetupId,
   dayIndex: z.number().int().min(0),
+  /**
+   * What the day was called when it was trained.
+   *
+   * History is a record, not a projection: reading the name off the plan at
+   * render time meant editing a plan rewrote what someone did last month.
+   * Optional because sessions written before this carry no name.
+   */
+  dayName: z.string().optional(),
   startedAt: z.number().int(),
   endedAt: z.number().int().nullable(),
   sets: z.array(SetRecord),

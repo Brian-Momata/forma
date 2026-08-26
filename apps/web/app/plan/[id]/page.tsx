@@ -1,17 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import type { Exercise, Plan, PlanDay, PlanId } from "@form/core";
 
-import { Kicker, PillButton, Screen, ScrollArea, Tag } from "@/components/ui";
+import { Kicker, Loading, NotFound, PillButton, Screen, ScrollArea, Tag } from "@/components/ui";
 import { BackLink } from "@/components/ui/nav";
 import { ExerciseSheet } from "@/components/exercise-sheet";
-import { dayMinutes } from "@/lib/plan";
+import { dayMinutes, weekdayLabel } from "@/lib/plan";
 import { useBootstrap } from "@/lib/use-bootstrap";
 import { useApp } from "@/store/app";
 
 type SheetState = { mode: "swap"; index: number } | { mode: "add" } | null;
+
+/** Equipment a movement is loaded with, so the editor can offer a target weight. */
+const LOADABLE_REQUIREMENTS = [
+  "dumbbells",
+  "barbell",
+  "kettlebell",
+  "ez-bar",
+  "cable",
+  "machines",
+  "medicine-ball",
+] as const;
 
 export default function PlanPage() {
   const ready = useBootstrap();
@@ -30,13 +41,15 @@ export default function PlanPage() {
   const setup = setups.find((s) => s.id === plan?.setupId);
   const day = plan?.days[Math.min(dayIndex, (plan?.days.length ?? 1) - 1)];
 
-  if (!ready || !plan || !day || !library || !profile || !setup) {
+  if (!ready || !library || !profile) return <Loading />;
+  if (!plan || !setup || !day) {
     return (
-      <Screen>
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-[13px] text-t4">Loading…</div>
-        </div>
-      </Screen>
+      <NotFound
+        title="That plan is gone"
+        body="It may have been deleted, or belonged to a setup that was removed."
+        href="/plans"
+        label="Back to your plans"
+      />
     );
   }
 
@@ -109,7 +122,7 @@ export default function PlanPage() {
 
   const adjust = (
     index: number,
-    field: "sets" | "reps" | "durationSec" | "restSec",
+    field: "sets" | "reps" | "durationSec" | "restSec" | "targetWeightKg",
     delta: number
   ) =>
     mutateDay((d) => ({
@@ -117,16 +130,26 @@ export default function PlanPage() {
       exercises: d.exercises.map((item, i) => {
         if (i !== index) return item;
         const p = item.prescription;
-        const currentValue = p[field];
-        if (currentValue === undefined) return item;
+        const raw = p[field];
+        // A target weight that has never been set is "we do not know yet", not
+        // "not applicable": it starts from zero rather than refusing the edit.
+        // Every other field is absent only when it does not apply at all.
+        if (raw === undefined && field !== "targetWeightKg") return item;
+        const currentValue = raw ?? 0;
         const limits = {
           sets: [1, 10],
           reps: [1, 100],
           durationSec: [5, 600],
           restSec: [0, 300],
+          targetWeightKg: [0, 500],
         } as const;
         const [min, max] = limits[field];
-        const step = field === "durationSec" || field === "restSec" ? 5 : 1;
+        const step =
+          field === "durationSec" || field === "restSec"
+            ? 5
+            : field === "targetWeightKg"
+              ? 2.5
+              : 1;
         return {
           ...item,
           prescription: { ...p, [field]: Math.min(max, Math.max(min, currentValue + delta * step)) },
@@ -152,9 +175,10 @@ export default function PlanPage() {
         <div className="px-[22px] pt-[58px]">
           <BackLink href="/plans" />
 
-          <input
+          <DraftInput
             value={plan.name}
-            onChange={(e) => void mutatePlan((p) => ({ ...p, name: e.target.value }))}
+            onCommit={(name) => void mutatePlan((p) => ({ ...p, name }))}
+            fallback="Untitled plan"
             aria-label="Plan name"
             className="mt-4 w-full bg-transparent outline-none"
             style={{
@@ -210,14 +234,18 @@ export default function PlanPage() {
         </div>
 
         <div className="flex items-center gap-3 border-t border-hair-07 px-[22px] py-3">
-          <input
+          <DraftInput
             value={day.name}
-            onChange={(e) =>
-              void mutateDay((d) => ({ ...d, name: e.target.value || "Untitled" }))
-            }
+            onCommit={(name) => void mutateDay((d) => ({ ...d, name }))}
+            fallback="Untitled session"
             aria-label="Session name"
             className="min-w-0 flex-1 bg-transparent text-[14px] font-semibold text-t2 outline-none"
           />
+          {weekdayLabel(day) && (
+            <span className="shrink-0 text-[11.5px] font-semibold uppercase tracking-[.1em] text-t5">
+              {weekdayLabel(day)}
+            </span>
+          )}
           {plan.days.length > 1 && (
             <button
               type="button"
@@ -266,6 +294,40 @@ export default function PlanPage() {
         {working.map((item, order) => {
           const exercise = library.byId(item.exerciseId);
           const p = item.prescription;
+
+          // The player drops what it cannot resolve, so the editor has to show
+          // it rather than counting work that silently vanishes at run time.
+          if (!exercise) {
+            return (
+              <div key={item.i} className="border-t border-hair-07 px-[22px] py-[18px]">
+                <div className="flex items-center gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[15px] font-semibold text-[#FFB020]">
+                      This movement is no longer in the library
+                    </div>
+                    <div className="mt-[3px] text-[12px] text-t4">
+                      It will be skipped. Swap it for something else.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSheet({ mode: "swap", index: item.i })}
+                    className="shrink-0 text-[11.5px] font-semibold uppercase tracking-[.1em] text-acc"
+                  >
+                    Swap
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void remove(item.i)}
+                    className="shrink-0 text-[11.5px] font-semibold uppercase tracking-[.1em] text-t5 hover:text-t2"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div key={item.i} className="border-t border-hair-07 px-[22px] py-[18px]">
               <div className="flex items-center gap-4">
@@ -287,10 +349,10 @@ export default function PlanPage() {
                   className="min-w-0 flex-1 text-left"
                 >
                   <div className="truncate text-[16px] font-semibold tracking-[-.012em]">
-                    {exercise?.name ?? "Unknown"}
+                    {exercise.name}
                   </div>
                   <div className="mt-[3px] text-[12px] text-t4">
-                    {exercise?.pattern.replace(/-/g, " ")} · tap to swap
+                    {exercise.pattern.replace(/-/g, " ")} · tap to swap
                   </div>
                 </button>
                 <div className="flex shrink-0 flex-col gap-1">
@@ -332,6 +394,19 @@ export default function PlanPage() {
                   value={p.restSec}
                   onChange={(d) => void adjust(item.i, "restSec", d)}
                 />
+                {LOADABLE_REQUIREMENTS.some((r) => exercise.requires.includes(r)) &&
+                  p.reps !== undefined && (
+                    <Stepper
+                      label="target"
+                      unit={profile.units}
+                      value={
+                        profile.units === "lb"
+                          ? Math.round((p.targetWeightKg ?? 0) * 2.2046226)
+                          : (p.targetWeightKg ?? 0)
+                      }
+                      onChange={(d) => void adjust(item.i, "targetWeightKg", d)}
+                    />
+                  )}
                 <button
                   type="button"
                   onClick={() => void remove(item.i)}
@@ -434,6 +509,70 @@ export default function PlanPage() {
         />
       )}
     </Screen>
+  );
+}
+
+/**
+ * A text field that does not write to the database on every keystroke.
+ *
+ * The value it displays is the stored one, and the stored one used to arrive
+ * back asynchronously through a full store refresh -- so typing quickly dropped
+ * and reordered characters. The draft is local while the field has focus, and
+ * is committed on a pause or on blur. Empty commits fall back rather than
+ * persisting a name that fails the Plan schema's own min(1).
+ */
+function DraftInput({
+  value,
+  onCommit,
+  fallback,
+  ...rest
+}: {
+  value: string;
+  onCommit(next: string): void;
+  fallback: string;
+} & Omit<React.ComponentPropsWithoutRef<"input">, "value" | "onChange">) {
+  const [draft, setDraft] = useState(value);
+  const [editing, setEditing] = useState(false);
+  const timer = useRef<number | null>(null);
+
+  // Adopt changes from elsewhere -- a regenerate, say -- but never yank the
+  // field out from under someone mid-word. Done during render because it is
+  // state derived from a prop, not a synchronisation with anything external.
+  const [shownValue, setShownValue] = useState(value);
+  if (value !== shownValue && !editing) {
+    setShownValue(value);
+    setDraft(value);
+  }
+
+  useEffect(
+    () => () => {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+    },
+    []
+  );
+
+  const commit = (next: string) => {
+    const trimmed = next.trim();
+    onCommit(trimmed.length > 0 ? trimmed : fallback);
+  };
+
+  return (
+    <input
+      {...rest}
+      value={draft}
+      onFocus={() => setEditing(true)}
+      onChange={(e) => {
+        const next = e.target.value;
+        setDraft(next);
+        if (timer.current !== null) window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => commit(next), 500);
+      }}
+      onBlur={() => {
+        if (timer.current !== null) window.clearTimeout(timer.current);
+        setEditing(false);
+        commit(draft);
+      }}
+    />
   );
 }
 

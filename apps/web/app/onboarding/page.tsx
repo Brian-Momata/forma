@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { GYM_PRESETS, type EquipmentId, type Experience, type Goal, type Limitation, type Setup, type SetupId } from "@form/core";
 
-import { Display, Kicker, PillButton, Screen, ScrollArea, Segments } from "@/components/ui";
+import { Display, Kicker, Loading, PillButton, Screen, ScrollArea, Segments } from "@/components/ui";
 import { useBootstrap } from "@/lib/use-bootstrap";
 import { useApp } from "@/store/app";
 import { defaultProfile, newId, setActiveSetupId } from "@/db/repo";
@@ -23,12 +23,19 @@ import {
 
 type Answers = Record<string, string[]>;
 
-export default function OnboardingPage() {
+function OnboardingFlow() {
   const router = useRouter();
   useBootstrap();
+  const search = useSearchParams();
   const updateProfile = useApp((s) => s.updateProfile);
   const upsertSetup = useApp((s) => s.upsertSetup);
   const regenerateForSetup = useApp((s) => s.regenerateForSetup);
+  const profile = useApp((s) => s.profile);
+  const activeSetup = useApp((s) => s.activeSetup);
+
+  // Re-running onboarding revises the setup you already have. Minting a new one
+  // left people with two places both called "Home", each with their own plans.
+  const rerun = search.get("again") === "1";
 
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Answers>({ place: ["home"] });
@@ -99,9 +106,12 @@ export default function OnboardingPage() {
 
       const constraints = answers["constraints"] ?? [];
       const now = Date.now();
+      const existing = rerun ? activeSetup : null;
       const setup: Setup = {
-        id: newId("setup") as SetupId,
-        name: place === "gym" ? "My gym" : place === "outdoors" ? "Outdoors" : "Home",
+        id: existing?.id ?? (newId("setup") as SetupId),
+        name:
+          existing?.name ??
+          (place === "gym" ? "My gym" : place === "outdoors" ? "Outdoors" : "Home"),
         location: place,
         equipment,
         constraints: {
@@ -109,16 +119,21 @@ export default function OnboardingPage() {
           noJumping: constraints.includes("noJumping"),
           quiet: constraints.includes("quiet"),
         },
-        createdAt: now,
+        createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       };
 
+      // Only the answers this flow actually asked for. Spreading a whole default
+      // profile reset the accent, units, contrast and workout settings every
+      // time someone came back through here.
       await updateProfile({
-        ...defaultProfile(),
+        ...(profile ? {} : defaultProfile()),
         goal: (answers["goal"]?.[0] ?? "general") as Goal,
         experience: (answers["level"]?.[0] ?? "returning") as Experience,
         schedule: { daysPerWeek: days ?? 3, minutesPerSession: minutes ?? 30 },
         limitations: limits,
+        // Safety rule 7: pressing the button under the disclaimer is the
+        // acknowledgement, and the workout route refuses to start without it.
         disclaimerAcceptedAt: now,
       });
 
@@ -202,11 +217,19 @@ export default function OnboardingPage() {
         })}
 
         {isLast && (
-          <p className="px-[22px] py-5 text-[12px] leading-[1.6] text-t5">
-            FORM builds general fitness plans and is not medical advice. If you have an
-            injury or a condition, check with a professional before starting. Stop if
-            something hurts.
-          </p>
+          <div className="border-t border-hair-08 px-[22px] py-5">
+            <div className="text-[10.5px] font-extrabold uppercase tracking-[.2em] text-t4">
+              Before you start
+            </div>
+            <p className="mt-2 text-[12.5px] leading-[1.6] text-t3">
+              FORM builds general fitness plans and is not medical advice. If you have an
+              injury or a condition, check with a professional before starting. Stop if
+              something hurts.
+            </p>
+            <p className="mt-2 text-[12px] leading-[1.6] text-t5">
+              Building your plan confirms you have read this.
+            </p>
+          </div>
         )}
       </ScrollArea>
 
@@ -231,5 +254,13 @@ export default function OnboardingPage() {
         </PillButton>
       </div>
     </Screen>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <OnboardingFlow />
+    </Suspense>
   );
 }

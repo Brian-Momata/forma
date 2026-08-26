@@ -17,6 +17,7 @@ import {
   newId,
   plansForSetup,
   regenerateSetupPlans,
+  savePlan,
   saveSetup,
 } from "./repo";
 
@@ -103,6 +104,33 @@ describe("regenerating a setup's plans", () => {
 
     // The plan the person built is theirs.
     expect(byId.get(mine.id)).toEqual(mine);
+  });
+
+  it("keeps the week someone is on, and when the plan was made", async () => {
+    // Regeneration means the *situation* changed, not the person's history with
+    // the plan. Rebuilding used to reset week to 1 and stamp createdAt with the
+    // current time, so buying a kettlebell in week seven put you back at one.
+    const other: Setup = { ...setup, id: newId("setup") as SetupId, name: "Loft" };
+    await saveSetup(other);
+
+    const plan = await createGeneratedPlan(library, profile, other, {
+      goal: "strength",
+      schedule: { daysPerWeek: 3, minutesPerSession: 30 },
+      name: "Block",
+    });
+    await savePlan({ ...plan, week: 7 });
+    const before = (await plansForSetup(other.id))[0]!;
+
+    const rebuilt = await regenerateSetupPlans(library, profile, {
+      ...other,
+      equipment: [...other.equipment, "kettlebell"],
+    });
+
+    expect(rebuilt[0]?.week).toBe(7);
+    expect(rebuilt[0]?.createdAt).toBe(before.createdAt);
+    // And it really was rebuilt for the new situation.
+    expect(rebuilt[0]?.tier).toBe("dumbbell");
+    expect(rebuilt[0]?.name).toBe("Block");
   });
 
   it("does not invent a plan for a setup where someone only built their own", async () => {

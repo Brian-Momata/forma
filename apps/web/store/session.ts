@@ -5,6 +5,7 @@ import {
   abandon as abandonPlayer,
   addRest as addRestPlayer,
   completeSet as completeSetPlayer,
+  setWeight as setWeightPlayer,
   skip as skipPlayer,
   start as startPlayer,
   tick as tickPlayer,
@@ -14,7 +15,12 @@ import {
 } from "@form/core";
 import type { Feel, PlanId, SessionId, SetupId } from "@form/core";
 
-import { checkpoint, clearCheckpoint, finishSession } from "@/db/repo";
+import {
+  checkpoint,
+  clearCheckpoint,
+  finishSession,
+  recordSessionProgress,
+} from "@/db/repo";
 
 export interface SessionMeta {
   sessionId: SessionId;
@@ -43,6 +49,7 @@ interface SessionStore {
   skip(): void;
   completeSet(): void;
   addRest(seconds: number): void;
+  setWeight(kg: number | null): void;
   abandon(): void;
   finish(feel: Feel | null): Promise<void>;
   restore(player: PlayerState, meta: SessionMeta): void;
@@ -55,8 +62,17 @@ export interface SessionCheckpoint {
   meta: SessionMeta;
 }
 
+/**
+ * Writes the session through to storage.
+ *
+ * Two records, deliberately: the checkpoint is how an interrupted session is
+ * resumed, and the session row is the person's history. Keeping only the
+ * checkpoint would mean a workout that was never formally finished had never
+ * happened, which is how an hour of training used to disappear.
+ */
 function persist(player: PlayerState, meta: SessionMeta): void {
   void checkpoint({ player, meta } satisfies SessionCheckpoint);
+  void recordSessionProgress(meta.sessionId, player.records, player.endedAt);
 }
 
 export const useSession = create<SessionStore>((set, get) => ({
@@ -114,9 +130,14 @@ export const useSession = create<SessionStore>((set, get) => ({
   },
 
   abandon() {
-    const { player } = get();
+    const { player, meta } = get();
     if (!player) return;
-    set({ player: abandonPlayer(player, Date.now()) });
+    const next = abandonPlayer(player, Date.now());
+    set({ player: next });
+    // "End and save" has to actually save. The sets are already banked by the
+    // ticks that got here; this is what closes the session so it counts as
+    // trained rather than sitting half-open forever.
+    if (meta) void recordSessionProgress(meta.sessionId, next.records, next.endedAt);
     void clearCheckpoint();
   },
 
@@ -125,6 +146,14 @@ export const useSession = create<SessionStore>((set, get) => ({
     if (!player || !meta) return;
     await finishSession(meta.sessionId, [...player.records], feel);
     await clearCheckpoint();
+  },
+
+  setWeight(kg) {
+    const { player, meta } = get();
+    if (!player) return;
+    const next = setWeightPlayer(player, kg);
+    set({ player: next });
+    if (meta) persist(next, meta);
   },
 
   restore(player, meta) {

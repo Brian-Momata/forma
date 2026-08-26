@@ -25,6 +25,20 @@ export function MediaWell({
   const [frame, setFrame] = useState(0);
   const [failed, setFailed] = useState(false);
 
+  // A failure belongs to one exercise's photos, not to the component. Without
+  // this, the first image that times out on gym wifi blanked the demo for every
+  // exercise after it, because the well keeps its place in the tree all session.
+  //
+  // Adjusted during render rather than in an effect: this is state derived from
+  // a prop change, and an effect would paint the stale frame first.
+  const key = images.join("|");
+  const [shownKey, setShownKey] = useState(key);
+  if (key !== shownKey) {
+    setShownKey(key);
+    setFailed(false);
+    setFrame(0);
+  }
+
   const usable = failed ? [] : images.slice(0, 2);
 
   useEffect(() => {

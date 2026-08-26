@@ -34,6 +34,10 @@ export interface PlayerItem {
   warmup: boolean;
   cues: readonly string[];
   images: readonly string[];
+  /** Whether this movement takes external load, so the screen offers a weight. */
+  loadable: boolean;
+  /** What the plan asks for, in kilograms. Null until someone has logged one. */
+  targetWeightKg: number | null;
 }
 
 export interface PlayerState {
@@ -51,6 +55,15 @@ export interface PlayerState {
 
   /** Extra seconds the person added to the current rest. */
   bonusRestSec: number;
+
+  /**
+   * Weight on the bar for the current exercise, in kilograms.
+   *
+   * Carried across that exercise's sets -- nobody changes the load between set
+   * two and set three without meaning to -- and re-seeded from the plan's
+   * target when the session moves on to the next movement.
+   */
+  weightKg: number | null;
 
   startedAt: number;
   endedAt: number | null;
@@ -85,6 +98,7 @@ export function start(
     pausedMs: 0,
     pausedAt: null,
     bonusRestSec: 0,
+    weightKg: resolved[0]?.targetWeightKg ?? null,
     startedAt: now,
     endedAt: resolved.length === 0 ? now : null,
     records: [],
@@ -185,7 +199,7 @@ function recordSet(state: PlayerState, now: number, skipped: boolean): SetRecord
       setIndex: state.setIndex,
       reps: item.kind === "reps" ? item.reps : null,
       durationSec: item.kind === "time" ? item.durationSec : null,
-      weightKg: null,
+      weightKg: item.loadable ? state.weightKg : null,
       skipped,
       completedAt: now,
     },
@@ -229,12 +243,21 @@ export function advance(state: PlayerState, now: number, skipped = false): Playe
     case "rest":
       return enterPhase(state, "set", now);
 
-    case "transition":
+    case "transition": {
+      const next = state.exIndex + 1;
       return enterPhase(
-        { ...state, exIndex: state.exIndex + 1, setIndex: 0 },
+        {
+          ...state,
+          exIndex: next,
+          setIndex: 0,
+          // A new movement means a new load, so the previous exercise's weight
+          // must not follow it across.
+          weightKg: state.items[next]?.targetWeightKg ?? null,
+        },
         "ready",
         now
       );
+    }
 
     default:
       // "complete" is excluded by the guard above; this makes any new phase a
@@ -285,6 +308,17 @@ export function completeSet(state: PlayerState, now: number): PlayerState {
 /** Skip: moves on without crediting the set. */
 export function skip(state: PlayerState, now: number): PlayerState {
   return advance(state, now, state.phase === "set");
+}
+
+/**
+ * Records what is actually on the bar.
+ *
+ * Kept out of the set record until the set is banked, so changing it mid-set
+ * corrects the set you are doing rather than rewriting one you have finished.
+ */
+export function setWeight(state: PlayerState, kg: number | null): PlayerState {
+  if (kg === null) return { ...state, weightKg: null };
+  return { ...state, weightKg: Math.max(0, Math.min(500, kg)) };
 }
 
 /** The design's "+20s" during rest. */

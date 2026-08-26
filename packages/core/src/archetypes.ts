@@ -181,6 +181,30 @@ export interface GoalSpec {
 const cycle = (pool: DayTemplate[], days: number): DayTemplate[] =>
   Array.from({ length: days }, (_, i) => pool[i % pool.length] as DayTemplate);
 
+const LETTERS = "ABCDEFG";
+
+/**
+ * Makes every day in a plan nameable.
+ *
+ * A week cycles its templates, so a five-day mobility plan is five copies of
+ * "Mobility Flow". The day is how someone refers to a session -- picking it in
+ * the editor, reading it back in their history -- so identical names make the
+ * plan unusable in exactly the places it matters. Follows the naming the
+ * templates already use: Full Body A, Full Body B.
+ */
+function distinguish(days: DayTemplate[]): DayTemplate[] {
+  const totals = new Map<string, number>();
+  for (const d of days) totals.set(d.name, (totals.get(d.name) ?? 0) + 1);
+
+  const seen = new Map<string, number>();
+  return days.map((d) => {
+    if ((totals.get(d.name) ?? 0) < 2) return d;
+    const n = seen.get(d.name) ?? 0;
+    seen.set(d.name, n + 1);
+    return { ...d, name: `${d.name} ${LETTERS[n] ?? String(n + 1)}` };
+  });
+}
+
 export const GOALS: Readonly<Record<Goal, GoalSpec>> = {
   strength: {
     shape: "straight",
@@ -315,7 +339,7 @@ export function resolveArchetype(
   const sets = experience === "new" ? Math.min(2, g.sets[experience]) : g.sets[experience];
 
   return {
-    days: g.splitFor(daysPerWeek),
+    days: distinguish(g.splitFor(daysPerWeek)),
     sets,
     reps,
     restSec: Math.round(g.restSec * t.restScale),

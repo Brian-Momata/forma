@@ -15,6 +15,7 @@ import {
   remainingSec,
   skip,
   start,
+  setWeight,
   tick,
   togglePause,
   totalSets,
@@ -34,6 +35,8 @@ const timed = (id: string, sets: number, durationSec: number, restSec: number): 
   warmup: false,
   cues: ["a", "b"],
   images: [],
+  loadable: false,
+  targetWeightKg: null,
 });
 
 const repped = (id: string, sets: number, reps: number, restSec: number): PlayerItem => ({
@@ -47,6 +50,8 @@ const repped = (id: string, sets: number, reps: number, restSec: number): Player
   warmup: false,
   cues: ["a", "b"],
   images: [],
+  loadable: false,
+  targetWeightKg: null,
 });
 
 const T0 = 1_000_000;
@@ -246,5 +251,70 @@ describe("progress reporting", () => {
     expect(s.phase).toBe("transition");
     s = runFor(s, TRANSITION_SEC, READY_SEC + 5);
     expect(s.phase).toBe("ready");
+  });
+});
+
+/**
+ * Weight is what makes the load tiers mean anything: the plan cannot guess what
+ * someone squats, so the session records it and progression reads it back.
+ */
+describe("logging what was on the bar", () => {
+  const loaded = (id: string, sets: number, target: number | null): PlayerItem => ({
+    ...repped(id, sets, 8, 60),
+    loadable: true,
+    targetWeightKg: target,
+  });
+
+  it("starts from the plan's target when there is one", () => {
+    expect(start([loaded("Squat", 3, 60)], 0).weightKg).toBe(60);
+    expect(start([loaded("Squat", 3, null)], 0).weightKg).toBeNull();
+  });
+
+  it("writes the weight onto every set of that exercise", () => {
+    let state = start([loaded("Squat", 2, 60)], 0);
+    state = advance(state, 1000); // ready -> set
+    state = completeSet(state, 2000);
+    state = advance(state, 3000); // rest -> set
+    state = completeSet(state, 4000);
+
+    expect(state.records.map((r) => r.weightKg)).toEqual([60, 60]);
+  });
+
+  it("keeps a correction for the sets that follow it", () => {
+    let state = start([loaded("Squat", 2, 60)], 0);
+    state = advance(state, 1000);
+    state = setWeight(state, 65);
+    state = completeSet(state, 2000);
+    state = advance(state, 3000);
+    state = completeSet(state, 4000);
+
+    expect(state.records.map((r) => r.weightKg)).toEqual([65, 65]);
+  });
+
+  it("does not carry one exercise's load onto the next", () => {
+    let state = start([loaded("Squat", 1, 60), loaded("Bench", 1, 40)], 0);
+    state = advance(state, 1000);
+    state = completeSet(state, 2000); // -> transition
+    state = advance(state, 3000); // -> ready on Bench
+    state = advance(state, 4000); // -> set
+    state = completeSet(state, 5000);
+
+    expect(state.records.map((r) => r.weightKg)).toEqual([60, 40]);
+  });
+
+  it("records nothing for a movement that takes no load", () => {
+    let state = start([repped("Pushup", 1, 10, 60)], 0);
+    state = advance(state, 1000);
+    state = setWeight(state, 20);
+    state = completeSet(state, 2000);
+
+    // A bodyweight push-up has no weight to log, whatever the state says.
+    expect(state.records[0]?.weightKg).toBeNull();
+  });
+
+  it("refuses a negative or absurd load", () => {
+    const state = start([loaded("Squat", 1, 60)], 0);
+    expect(setWeight(state, -10).weightKg).toBe(0);
+    expect(setWeight(state, 9000).weightKg).toBe(500);
   });
 });

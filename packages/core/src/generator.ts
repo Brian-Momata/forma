@@ -58,6 +58,18 @@ export function estimateExerciseSeconds(p: Prescription): number {
   return p.sets * work + Math.max(0, p.sets - 1) * p.restSec;
 }
 
+/**
+ * Spreads a plan's sessions across the week rather than stacking them.
+ *
+ * Advisory -- people train when they train -- but the advice has to be sound:
+ * three full-body days on Monday, Tuesday and Wednesday is the same movement
+ * patterns loaded three days running, which is worse advice than none.
+ */
+export function weekdayFor(index: number, total: number): number | null {
+  if (total < 1 || total > 7) return null;
+  return Math.floor((index * 7) / total) % 7;
+}
+
 export function estimateDaySeconds(day: PlanDay): number {
   let total = 0;
   for (const item of day.exercises) {
@@ -166,7 +178,10 @@ function buildWarmup(
   state: FillState,
   working: readonly Exercise[]
 ): PlanExercise[] {
-  const pool = eligibleForPattern(library, "mobility", ctx);
+  // Dynamic only, and that rule does not bend. Holding a static stretch before
+  // strength work measurably reduces output, so when the pool runs thin the
+  // warm-up gets shorter rather than worse.
+  const pool = eligibleForPattern(library, "mobility", ctx).filter((e) => e.dynamic);
   if (pool.length === 0) return [];
 
   const target = new Set<string>();
@@ -175,11 +190,11 @@ function buildWarmup(
     for (const m of e.secondaryMuscles) target.add(m);
   }
 
-  // Dynamic only. Holding a static stretch before strength work measurably
-  // reduces output, so a warm-up that opens with a held fold is a worse
-  // warm-up than no warm-up at all.
-  const dynamic = pool.filter((e) => e.dynamic);
-  const usable = dynamic.length >= count ? dynamic : pool;
+  // Prefer something the session does not already prescribe -- opening with leg
+  // swings and then working leg swings is not a warm-up. But safety rule 3 says
+  // there must *be* a warm-up, so a repeat beats nothing when the pool is spent.
+  const fresh = pool.filter((e) => !state.used.has(e.id));
+  const usable = fresh.length > 0 ? fresh : pool;
 
   const scored = usable
     .map((e) => {
@@ -191,7 +206,7 @@ function buildWarmup(
     .sort((a, b) => b.s - a.s || a.e.name.localeCompare(b.e.name));
 
   return scored.slice(0, count).map(({ e }) => {
-    state.seen.set(e.id, (state.seen.get(e.id) ?? 0) + 1);
+    state.used.add(e.id);
     return {
       exerciseId: e.id,
       warmup: true,
@@ -204,6 +219,9 @@ function buildWarmup(
   });
 }
 
+/** Nobody wants a session with thirty movements in it, however long the budget. */
+const MAX_WORKING = 12;
+
 /**
  * Reconciles a day with its time budget, in both directions.
  *
@@ -211,17 +229,28 @@ function buildWarmup(
  * whole movement pattern, and a session that lost its only pull is a worse
  * session than one that did three sets instead of four. The warm-up is never
  * touched: a rushed session should be shorter, not less safe.
+ *
+ * Growing runs the other way round. Someone who asked for 75 minutes wants more
+ * training, not the same five movements done four times each, so the spare
+ * exercises are spent before the set ceiling is raised.
  */
 function fitDay(
   day: PlanDay,
   budgetSec: number,
   arch: Archetype,
   roles: ReadonlyMap<string, Slot["role"]>,
-  canExpand: boolean
+  canExpand: boolean,
+  spare: readonly PlanExercise[] = []
 ): PlanDay {
   const floorFor = (item: PlanExercise): number =>
     roles.get(item.exerciseId) === "accessory" ? 1 : Math.min(2, arch.sets);
-  const ceilingFor = (): number => (canExpand ? arch.sets + 1 : arch.sets);
+
+  // A rep-based session grows by one set at most -- past that it stops being the
+  // programme it was written as. A time-based one is a flow, and repeating the
+  // round is how a longer mobility session is actually built, so it may go
+  // further. Neither applies to a beginner: safety rule 5 caps them outright.
+  const ceilingFor = (): number =>
+    canExpand ? arch.sets + (arch.reps === null ? 3 : 1) : arch.sets;
 
   let exercises = [...day.exercises];
   const withExercises = (xs: PlanExercise[]): PlanDay => ({ ...day, exercises: xs });
@@ -275,30 +304,57 @@ function fitDay(
   }
 
   // 3. Someone who asked for 30 minutes should not be handed 12. Add sets back
-  //    up to the ceiling while the budget allows, cheapest first.
-  guard = 64;
-  while (guard-- > 0) {
-    let target = -1;
-    let cheapest = Number.POSITIVE_INFINITY;
-    exercises.forEach((item, i) => {
-      if (item.warmup || item.prescription.sets >= ceilingFor()) return;
-      const c = estimateExerciseSeconds(item.prescription);
-      if (c < cheapest) {
-        cheapest = c;
-        target = i;
-      }
-    });
-    if (target < 0) break;
-    const item = exercises[target];
-    if (!item) break;
-    const bumped = [...exercises];
-    bumped[target] = {
-      ...item,
-      prescription: { ...item.prescription, sets: item.prescription.sets + 1 },
-    };
-    if (cost(bumped) > budgetSec) break;
-    exercises = bumped;
+  //    while the budget allows, cheapest first, up to a ceiling.
+  const grow = (ceiling: number): void => {
+    let g = 128;
+    while (g-- > 0) {
+      // Cheapest *increment*, not cheapest exercise. A short exercise with long
+      // rests can cost more to add a set to than a long one with none, so
+      // picking by total cost stops early and leaves budget unspent.
+      let target = -1;
+      let cheapest = Number.POSITIVE_INFINITY;
+      exercises.forEach((item, i) => {
+        if (item.warmup || item.prescription.sets >= ceiling) return;
+        const delta =
+          estimateExerciseSeconds({
+            ...item.prescription,
+            sets: item.prescription.sets + 1,
+          }) - estimateExerciseSeconds(item.prescription);
+        if (delta < cheapest) {
+          cheapest = delta;
+          target = i;
+        }
+      });
+      if (target < 0) break;
+      const item = exercises[target];
+      if (!item) break;
+      const bumped = [...exercises];
+      bumped[target] = {
+        ...item,
+        prescription: { ...item.prescription, sets: item.prescription.sets + 1 },
+      };
+      // The cheapest increment did not fit, so none of the others will either.
+      if (cost(bumped) > budgetSec) break;
+      exercises = bumped;
+    }
+  };
+
+  // 3a. Bring everything up to the volume the archetype actually asked for.
+  grow(arch.sets);
+
+  // 3b. Still time left? Spend it on more movement rather than more sets. A
+  //     75-minute session that is a 30-minute session with extra sets bolted on
+  //     is not what someone who set aside 75 minutes was asking for.
+  for (const extra of spare) {
+    if (exercises.filter((e) => !e.warmup).length >= MAX_WORKING) break;
+    const grown = [...exercises, extra];
+    if (cost(grown) > budgetSec) continue;
+    exercises = grown;
   }
+
+  // 3c. Only now let the set count run past the archetype, and only for
+  //     someone with the training history to absorb it (safety rule 5).
+  grow(ceilingFor());
 
   return withExercises(exercises);
 }
@@ -350,13 +406,17 @@ export function generatePlan(
   const state: FillState = {
     used: new Set(),
     seen: new Map(),
+    // Deliberately not seeded with minutesPerSession. How long someone has
+    // decides how much of the session they get, never which movements it is
+    // built from -- and a seed that shifts with the budget makes "more time
+    // gives you more training" impossible to state, because the two plans are
+    // no longer comparable.
     rand: mulberry32(
       hashSeed([
         goal,
         tier,
         profile.experience,
         String(schedule.daysPerWeek),
-        String(schedule.minutesPerSession),
         [...profile.limitations].sort().join(","),
         [...setup.equipment].sort().join(","),
         setup.id,
@@ -378,7 +438,6 @@ export function generatePlan(
       const filled = fillSlot(library, slot, ctx, state, arch);
       if (!filled) continue;
       state.used.add(filled.exercise.id);
-      state.seen.set(filled.exercise.id, (state.seen.get(filled.exercise.id) ?? 0) + 1);
       if (filled.viaFallback) usedFallback = true;
 
       chosen.push(filled.exercise);
@@ -390,18 +449,50 @@ export function generatePlan(
       });
     }
 
-    // Warm-up is chosen against the work that was actually selected.
+    // Warm-up is chosen against the work that was actually selected, and takes
+    // its pick before the spare pass below. On a mobility day both draw from
+    // the same small pool, and a session that spent every dynamic movement on
+    // extra work would have nothing left to warm up with.
     const warmup = buildWarmup(library, arch.warmupCount, ctx, state, chosen);
 
-    days.push(
-      fitDay(
-        { name: template.name, weekday: index < 7 ? index : null, exercises: [...warmup, ...working] },
-        budgetSec,
-        arch,
-        roles,
-        profile.experience !== "new"
-      )
+    // A second pass over the same slots, for a session with time to spare. They
+    // are accessories: the template's own slots are the session, and these only
+    // exist to spend a budget the template alone cannot fill.
+    const spare: PlanExercise[] = [];
+    for (const slot of template.slots) {
+      const extra: Slot = { ...slot, role: "accessory" };
+      const filled = fillSlot(library, extra, ctx, state, arch);
+      if (!filled) continue;
+      state.used.add(filled.exercise.id);
+      roles.set(filled.exercise.id, "accessory");
+      spare.push({
+        exerciseId: filled.exercise.id,
+        warmup: false,
+        prescription: prescribe(filled.exercise, arch, extra),
+      });
+    }
+
+    const day = fitDay(
+      {
+        name: template.name,
+        weekday: weekdayFor(index, arch.days.length),
+        exercises: [...warmup, ...working],
+      },
+      budgetSec,
+      arch,
+      roles,
+      profile.experience !== "new",
+      spare
     );
+
+    // Variety across the week is counted from what survived, not from what was
+    // considered: penalising a later day for an exercise this one dropped would
+    // steer the plan away from movements it never actually used.
+    for (const item of day.exercises) {
+      state.seen.set(item.exerciseId, (state.seen.get(item.exerciseId) ?? 0) + 1);
+    }
+
+    days.push(day);
   });
 
   return {

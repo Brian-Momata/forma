@@ -9,20 +9,60 @@
  * and specific, and an opaque generated worker is hard to reason about when
  * someone is standing in a gym looking at a blank screen.
  */
-const VERSION = "form-v1";
+// Bumped whenever the caching strategy changes, so stale entries are dropped
+// on activate rather than served forever.
+const VERSION = "form-v2";
 const SHELL = `${VERSION}-shell`;
 const ASSETS = `${VERSION}-assets`;
 const IMAGES = `${VERSION}-images`;
 
-const SHELL_URLS = ["/", "/plans", "/progress", "/you", "/setups", "/manifest.webmanifest"];
+const SHELL_URLS = [
+  "/",
+  "/plans",
+  "/plans/new",
+  "/progress",
+  "/you",
+  "/setups",
+  "/setups/new",
+  "/onboarding",
+  "/manifest.webmanifest",
+];
+
+/**
+ * Pulls the exercise library into the cache during install.
+ *
+ * It is a separate chunk loaded on demand, so without this a fresh install that
+ * went offline before opening a plan had no library at all -- and the app has
+ * nothing to show without one. "Offline is the default, not a feature"
+ * (ENGINEERING.md §1) has to include the first run.
+ *
+ * The chunk is content-hashed, so its URL is discovered from the build manifest
+ * rather than hard-coded.
+ */
+async function precacheLibrary(cache) {
+  try {
+    const response = await fetch("/", { cache: "no-store" });
+    if (!response.ok) return;
+    const html = await response.text();
+    const urls = new Set();
+    for (const match of html.matchAll(/["'`](\/_next\/static\/[^"'`\s]+?\.js)["'`]/g)) {
+      if (match[1]) urls.add(match[1]);
+    }
+    await Promise.allSettled([...urls].map((url) => cache.add(url)));
+  } catch {
+    // Precaching is an optimisation; a failed install would be worse.
+  }
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(SHELL)
+    (async () => {
+      const shell = await caches.open(SHELL);
       // One bad URL must not fail the whole install, so cache individually.
-      .then((cache) => Promise.allSettled(SHELL_URLS.map((url) => cache.add(url))))
-      .then(() => self.skipWaiting())
+      await Promise.allSettled(SHELL_URLS.map((url) => shell.add(url)));
+      await precacheLibrary(await caches.open(ASSETS));
+      await self.skipWaiting();
+    })()
   );
 });
 

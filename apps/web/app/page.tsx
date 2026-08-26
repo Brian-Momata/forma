@@ -4,18 +4,35 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { Display, Kicker, PillButton, Screen, ScrollArea } from "@/components/ui";
+import { Display, Kicker, Loading, PillButton, Screen, ScrollArea } from "@/components/ui";
 import { MediaWell } from "@/components/ui/media";
 import { TabBar } from "@/components/ui/nav";
-import { useBootstrap } from "@/lib/use-bootstrap";
+import { useBootstrap, useBootstrapError } from "@/lib/use-bootstrap";
 import { useNow } from "@/lib/use-now";
-import { nextDayIndex, streakDays, summarise, weekProgress } from "@/lib/plan";
+import {
+  nextDayIndex,
+  streakDays,
+  summarise,
+  upcomingDays,
+  weekProgress,
+  weekdayLabel,
+} from "@/lib/plan";
 import { useApp } from "@/store/app";
 
 const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
+const FULL_WEEKDAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
 
 export default function TodayPage() {
   const ready = useBootstrap();
+  const { error, retry } = useBootstrapError();
   const router = useRouter();
   const { profile, sessions, activeSetup, activePlan, library } = useApp();
 
@@ -30,12 +47,15 @@ export default function TodayPage() {
   const days = plan ? summarise(plan) : [];
   const todayIndex = plan ? nextDayIndex(plan, sessions) : 0;
   const today = days[todayIndex];
-  const upcoming = days.filter((d) => d.index !== todayIndex).slice(0, 2);
+  const upcoming = upcomingDays(days, todayIndex);
 
   const streak = streakDays(sessions, now);
   const week = weekProgress(sessions, now);
   const doneThisWeek = week.filter(Boolean).length;
-  const target = profile?.schedule.daysPerWeek ?? 3;
+  // The schedule lives on the plan, not the person (ENGINEERING.md §5): the
+  // profile only holds a default for the *next* plan, so counting against it
+  // told someone running five days a week that they were 2/3 of the way there.
+  const target = plan?.schedule.daysPerWeek ?? profile?.schedule.daysPerWeek ?? 3;
 
   const firstWorking = today?.day.exercises.find((e) => !e.warmup);
   const heroExercise =
@@ -44,13 +64,7 @@ export default function TodayPage() {
   // `now` is 0 until the clock store is subscribed after mount; rendering a
   // date before then would render the epoch.
   if (!ready || !profile || now === 0) {
-    return (
-      <Screen>
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-[13px] text-t4">Loading…</div>
-        </div>
-      </Screen>
-    );
+    return <Loading error={error} onRetry={retry} />;
   }
 
   const date = new Date(now);
@@ -106,14 +120,21 @@ export default function TodayPage() {
           </div>
         </div>
 
-        <div className="flex gap-[3px] px-[22px] pb-6">
+        <div
+          className="flex gap-[3px] px-[22px] pb-6"
+          role="group"
+          aria-label={`Trained ${doneThisWeek} of the last 7 days`}
+        >
           {week.map((done, i) => (
             <div key={i} className="flex-1">
               <div className="relative h-[3px] bg-white/10">
                 {done && <div className="absolute inset-0" style={{ background: "var(--acc)" }} />}
               </div>
               <div className="mt-[6px] text-center text-[9.5px] font-semibold text-t5">
-                {WEEKDAYS[i]}
+                <span aria-hidden>{WEEKDAYS[i]}</span>
+                <span className="sr-only">
+                  {FULL_WEEKDAYS[i]}: {done ? "trained" : "not trained"}
+                </span>
               </div>
             </div>
           ))}
@@ -193,6 +214,7 @@ export default function TodayPage() {
                         {d.day.name}
                       </div>
                       <div className="mt-[2px] text-[12px] text-t4">
+                        {weekdayLabel(d.day) ? `${weekdayLabel(d.day)} · ` : ""}
                         {d.minutes} min · {d.exercises} exercises
                       </div>
                     </div>

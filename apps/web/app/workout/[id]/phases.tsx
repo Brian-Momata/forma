@@ -6,9 +6,11 @@ import {
   formatClock,
   isChiming,
   nextItem,
+  phaseDuration,
   phaseProgress,
   remainingSec,
   totalSets,
+  type PlayerItem,
   type PlayerState,
 } from "@form/core";
 
@@ -19,9 +21,13 @@ import { useSession } from "@/store/session";
 /* ---------------------------------------------------------------------------
  * Timer leaves.
  *
- * These subscribe to a derived integer, so they re-render when the displayed
- * second changes and the rest of the screen does not re-render at all. That is
- * the single most important performance rule in the app (ENGINEERING.md §11).
+ * Each of these subscribes to one derived value and renders only itself, so the
+ * ticking clock never re-renders the screen around it -- the media well, the
+ * cues and the buttons render once per phase. This is the single most important
+ * performance rule in the app (ENGINEERING.md §11), and it only works if the
+ * hooks stay *inside* these leaves: calling them from a phase component makes
+ * the whole phase re-render five times a second, which is what they are here to
+ * prevent.
  * ------------------------------------------------------------------------- */
 
 function useRemaining(): number | null {
@@ -41,6 +47,126 @@ function useProgress(): number {
 
 function useChiming(): boolean {
   return useSession((s) => (s.player ? isChiming(s.player, s.now) : false));
+}
+
+/** The big countdown. Re-renders once a second; nothing around it does. */
+function CountdownDisplay({ size, className = "" }: { size: "timer" | "rest"; className?: string }) {
+  const remaining = useRemaining();
+  return (
+    <Display size={size} tabular className={className}>
+      {formatClock(remaining ?? 0)}
+    </Display>
+  );
+}
+
+function ReadyCountdown() {
+  const remaining = useRemaining();
+  return (
+    <Display
+      size="ready"
+      tabular
+      className="-ml-3 mt-2"
+      style={{ animation: "chimePop .45s ease-out" }}
+    >
+      {remaining ?? 0}
+    </Display>
+  );
+}
+
+function ElapsedLabel({ tone }: { tone?: "accent" | "rest" }) {
+  const elapsed = useElapsed();
+  return <Kicker tone={tone}>{`Target · ${formatClock(elapsed)} elapsed`}</Kicker>;
+}
+
+function PhaseBar({ tone }: { tone?: "accent" | "rest" }) {
+  const progress = useProgress();
+  return <ProgressBar value={progress} tone={tone} label="Time in this phase" />;
+}
+
+/**
+ * Spoken timer cues.
+ *
+ * Halfway, ten seconds, and the phase ending -- §10 asks for exactly these, and
+ * announcing every second is unusable with a screen reader. The end is
+ * announced as the *next* phase starting rather than at zero: the machine
+ * advances within 200ms of a countdown hitting zero, so a message rendered at
+ * zero unmounts before it can be read.
+ */
+function TimerAnnouncer({ phase, label }: { phase: string; label: string }) {
+  const remaining = useRemaining();
+  const total = useSession((s) => (s.player ? phaseDuration(s.player) : null));
+
+  let message = "";
+  if (remaining !== null && total !== null && total > 0) {
+    const half = Math.round(total / 2);
+    if (remaining === 10 && total > 25) message = "Ten seconds left";
+    else if (remaining === half && total > 40) message = "Halfway";
+  }
+
+  return (
+    <>
+      <div aria-live="polite" className="sr-only">
+        {message}
+      </div>
+      {/* Announced once when the phase changes, which is when it matters. */}
+      <div key={phase} aria-live="polite" className="sr-only">
+        {label}
+      </div>
+    </>
+  );
+}
+
+/**
+ * What is on the bar.
+ *
+ * Only shown for movements that take external load. Logging it is what makes
+ * load progression possible at all -- without a number, "add weight next week"
+ * is advice the app has no way to act on.
+ */
+function WeightControl({ item, unit }: { item: PlayerItem; unit: "kg" | "lb" }) {
+  const weightKg = useSession((s) => s.player?.weightKg ?? null);
+  const setWeight = useSession((s) => s.setWeight);
+
+  const toDisplay = (kg: number) => (unit === "lb" ? kg * 2.2046226 : kg);
+  const step = unit === "lb" ? 1.1023113 : 0.5;
+
+  const shown = weightKg === null ? null : Math.round(toDisplay(weightKg) * 2) / 2;
+
+  return (
+    <div className="mt-3 flex items-center gap-2">
+      <div className="text-[10.5px] font-bold uppercase tracking-[.14em] text-t5">Weight</div>
+      <div className="flex items-center gap-1 rounded-full border border-hair-12 px-1">
+        <button
+          type="button"
+          aria-label="Less weight"
+          onClick={() => setWeight(Math.max(0, (weightKg ?? 0) - step * 2))}
+          className="h-8 w-8 text-[15px] text-t3 hover:text-acc"
+        >
+          −
+        </button>
+        <div className="min-w-[70px] text-center text-[13px] font-semibold tabular-nums text-t1">
+          {shown === null ? `— ${unit}` : `${shown} ${unit}`}
+        </div>
+        <button
+          type="button"
+          aria-label="More weight"
+          onClick={() => setWeight((weightKg ?? 0) + step * 2)}
+          className="h-8 w-8 text-[15px] text-t3 hover:text-acc"
+        >
+          +
+        </button>
+      </div>
+      {item.targetWeightKg !== null && weightKg !== item.targetWeightKg && (
+        <button
+          type="button"
+          onClick={() => setWeight(item.targetWeightKg)}
+          className="text-[11.5px] font-semibold text-t4 underline underline-offset-4 hover:text-acc"
+        >
+          Plan says {Math.round(toDisplay(item.targetWeightKg) * 2) / 2} {unit}
+        </button>
+      )}
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------------- shared */
@@ -75,6 +201,37 @@ function ChimeRings({ tone }: { tone: "accent" | "rest" }) {
   );
 }
 
+/**
+ * The visual half of the end-of-phase tone.
+ *
+ * §10: the tone always has a visual equivalent, because plenty of people train
+ * with the sound off. The rings are animation and collapse to nothing under
+ * `prefers-reduced-motion`, so the badge -- which is static -- is what actually
+ * carries the guarantee, and both phases get one.
+ */
+function ChimeBurst({ tone }: { tone: "accent" | "rest" }) {
+  const chiming = useChiming();
+  if (!chiming) return null;
+
+  const rest = tone === "rest";
+  return (
+    <>
+      <ChimeRings tone={tone} />
+      <div
+        className="absolute right-5 px-[10px] py-[5px] text-[9.5px] font-extrabold uppercase tracking-[.16em]"
+        style={{
+          bottom: rest ? undefined : 150,
+          top: rest ? "22%" : undefined,
+          background: rest ? "var(--rest)" : "var(--acc)",
+          color: "var(--color-screen)",
+        }}
+      >
+        Tone
+      </div>
+    </>
+  );
+}
+
 function setLabel(state: PlayerState): string {
   const item = currentItem(state);
   if (!item) return "";
@@ -91,7 +248,6 @@ function doseLabel(state: PlayerState): string {
 /* -------------------------------------------------------------------- ready */
 
 export function ReadyPhase({ state }: { state: PlayerState }) {
-  const remaining = useRemaining();
   const item = currentItem(state);
 
   return (
@@ -110,14 +266,7 @@ export function ReadyPhase({ state }: { state: PlayerState }) {
         />
         <div className="relative">
           <Kicker tone="accent">Get ready</Kicker>
-          <Display
-            size="ready"
-            tabular
-            className="-ml-3 mt-2"
-            style={{ animation: "chimePop .45s ease-out" }}
-          >
-            {remaining ?? 0}
-          </Display>
+          <ReadyCountdown />
           <div className="my-[18px] mt-[22px] h-px bg-white/12" />
           <Display size="exercise" weight={800}>
             {item?.name ?? ""}
@@ -131,12 +280,15 @@ export function ReadyPhase({ state }: { state: PlayerState }) {
 
 /* ---------------------------------------------------------------------- set */
 
-export function SetPhase({ state, onExit }: { state: PlayerState; onExit: () => void }) {
-  const remaining = useRemaining();
-  const elapsed = useElapsed();
-  const progress = useProgress();
-  const chiming = useChiming();
-
+export function SetPhase({
+  state,
+  onExit,
+  units,
+}: {
+  state: PlayerState;
+  onExit: () => void;
+  units: "kg" | "lb";
+}) {
   const toggle = useSession((s) => s.toggle);
   const skip = useSession((s) => s.skip);
   const completeSet = useSession((s) => s.completeSet);
@@ -159,7 +311,12 @@ export function SetPhase({ state, onExit }: { state: PlayerState; onExit: () => 
         >
           ×
         </button>
-        <Segments className="flex-1" total={totalSets(state)} filled={done} />
+        <Segments
+          className="flex-1"
+          total={totalSets(state)}
+          filled={done}
+          label={`${done} of ${totalSets(state)} sets done`}
+        />
         <div
           className="shrink-0 text-t4"
           style={{
@@ -217,22 +374,17 @@ export function SetPhase({ state, onExit }: { state: PlayerState; onExit: () => 
       </div>
 
       <div className="relative flex flex-1 flex-col justify-end px-5 pb-[18px]">
-        {chiming && <ChimeRings tone="accent" />}
-        {chiming && (
-          <div
-            className="absolute right-5 px-[10px] py-[5px] text-[9.5px] font-extrabold uppercase tracking-[.16em]"
-            style={{ bottom: 150, background: "var(--acc)", color: "var(--color-screen)" }}
-          >
-            Tone
-          </div>
-        )}
+        <ChimeBurst tone="accent" />
 
-        <Kicker>{timed ? "Remaining" : `Target · ${formatClock(elapsed)} elapsed`}</Kicker>
+        <TimerAnnouncer
+          phase={`${state.exIndex}-${state.setIndex}-set`}
+          label={`${item.name}, set ${state.setIndex + 1} of ${item.sets}`}
+        />
+
+        {timed ? <Kicker>Remaining</Kicker> : <ElapsedLabel />}
 
         {timed ? (
-          <Display size="timer" tabular className="-ml-[6px] mt-[6px]">
-            {formatClock(remaining ?? 0)}
-          </Display>
+          <CountdownDisplay size="timer" className="-ml-[6px] mt-[6px]" />
         ) : (
           <div className="-ml-[6px] mt-[6px] flex items-baseline gap-3">
             <Display size="timer" tabular>
@@ -253,14 +405,9 @@ export function SetPhase({ state, onExit }: { state: PlayerState; onExit: () => 
           </div>
         )}
 
-        {/* Announced sparingly: a screen reader reading every second is unusable. */}
-        <div aria-live="polite" className="sr-only">
-          {timed && remaining !== null && (remaining === 10 || remaining === 0)
-            ? `${remaining} seconds remaining`
-            : ""}
-        </div>
+        {item.loadable && <WeightControl item={item} unit={units} />}
 
-        <ProgressBar value={progress} />
+        <PhaseBar />
       </div>
 
       <div
@@ -272,9 +419,21 @@ export function SetPhase({ state, onExit }: { state: PlayerState; onExit: () => 
             {paused ? "Resume" : "Pause"}
           </PillButton>
         ) : (
-          <PillButton className="h-[60px] flex-1" onClick={completeSet}>
-            Set complete
-          </PillButton>
+          <>
+            <PillButton className="h-[60px] flex-1" onClick={completeSet}>
+              Set complete
+            </PillButton>
+            {/* A rep set can be interrupted just as easily as a timed one, and
+                the clock keeps running either way. */}
+            <PillButton
+              className="h-[60px] w-[64px] shrink-0"
+              variant="outline"
+              aria-label={paused ? "Resume" : "Pause"}
+              onClick={toggle}
+            >
+              {paused ? "▶" : "❚❚"}
+            </PillButton>
+          </>
         )}
         <PillButton className="h-[60px] w-[74px] shrink-0" variant="muted" onClick={skip}>
           Skip
@@ -287,13 +446,12 @@ export function SetPhase({ state, onExit }: { state: PlayerState; onExit: () => 
 /* --------------------------------------------------------------------- rest */
 
 export function RestPhase({ state, onExit }: { state: PlayerState; onExit: () => void }) {
-  const remaining = useRemaining();
-  const progress = useProgress();
-  const chiming = useChiming();
   const skip = useSession((s) => s.skip);
   const addRest = useSession((s) => s.addRest);
+  const toggle = useSession((s) => s.toggle);
 
   const item = currentItem(state);
+  const paused = state.pausedAt !== null;
 
   return (
     <Screen background="var(--color-rest-screen)">
@@ -334,13 +492,15 @@ export function RestPhase({ state, onExit }: { state: PlayerState; onExit: () =>
       </div>
 
       <div className="relative flex flex-1 flex-col justify-center px-[22px]">
-        {chiming && <ChimeRings tone="rest" />}
+        <ChimeBurst tone="rest" />
+        <TimerAnnouncer
+          phase={`${state.exIndex}-${state.setIndex}-rest`}
+          label={`Rest. Next up ${item?.name ?? ""}, set ${state.setIndex + 1} of ${item?.sets ?? 0}`}
+        />
         <Kicker tone="rest">Rest</Kicker>
-        <Display size="rest" tabular className="-ml-[10px] mt-[10px]">
-          {formatClock(remaining ?? 0)}
-        </Display>
+        <CountdownDisplay size="rest" className="-ml-[10px] mt-[10px]" />
         <div className="mt-[22px]">
-          <ProgressBar value={progress} tone="rest" />
+          <PhaseBar tone="rest" />
         </div>
         <p className="mt-5 max-w-[270px] text-[13.5px] font-medium leading-[1.55] text-r2">
           Breathe out slowly. Shake the legs loose and set up before the timer runs out.
@@ -359,11 +519,20 @@ export function RestPhase({ state, onExit }: { state: PlayerState; onExit: () =>
         </div>
         <div className="mt-[18px] flex gap-[10px]">
           <PillButton
-            className="h-[56px] w-[96px] shrink-0"
+            className="h-[56px] w-[86px] shrink-0"
             variant="outline"
             onClick={() => addRest(20)}
           >
             +20s
+          </PillButton>
+          {/* Rest is exactly when a phone call arrives. */}
+          <PillButton
+            className="h-[56px] w-[64px] shrink-0"
+            variant="outline"
+            aria-label={paused ? "Resume" : "Pause"}
+            onClick={toggle}
+          >
+            {paused ? "▶" : "❚❚"}
           </PillButton>
           <PillButton className="h-[56px] flex-1" variant="rest" onClick={skip}>
             Skip rest

@@ -24,13 +24,17 @@ export function SetupEditor({
   onSave,
   onCancel,
   onDelete,
+  planCount,
 }: {
   initial: Setup;
   onSave(setup: Setup): void | Promise<void>;
   onCancel(): void;
   onDelete?: (() => void | Promise<void>) | undefined;
+  /** Plans that go with the setup, so deleting it can say what that costs. */
+  planCount?: number;
 }) {
   const [draft, setDraft] = useState<Setup>(initial);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const tier = resolveTier(draft.equipment);
 
   const applyPreset = (presetId: string) => {
@@ -114,14 +118,40 @@ export function SetupEditor({
           onConstraintsChange={(constraints) => setDraft((d) => ({ ...d, constraints }))}
         />
 
-        {onDelete && (
+        {onDelete && !confirmDelete && (
           <button
             type="button"
-            onClick={() => void onDelete()}
+            onClick={() => setConfirmDelete(true)}
             className="mt-8 w-full border-t border-hair-07 px-[22px] py-5 text-left text-[13px] font-semibold text-t5 hover:text-[#FF6B6B]"
           >
             Delete this setup
           </button>
+        )}
+
+        {/* Deleting a setup takes its plans with it, which is more destructive
+            than deleting a plan -- and that already asks first. */}
+        {onDelete && confirmDelete && (
+          <div className="mt-8 border-t border-hair-07 px-[22px] py-5">
+            <p className="text-[13px] leading-[1.5] text-t3">
+              Delete “{initial.name}”
+              {planCount && planCount > 0
+                ? ` and ${planCount === 1 ? "its plan" : `its ${planCount} plans`}?`
+                : "?"}{" "}
+              Sessions you have already logged are kept.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <PillButton variant="outline" className="flex-1" onClick={() => void onDelete()}>
+                Delete
+              </PillButton>
+              <PillButton
+                variant="muted"
+                className="flex-1"
+                onClick={() => setConfirmDelete(false)}
+              >
+                Keep
+              </PillButton>
+            </div>
+          </div>
         )}
 
         <div className="h-6" />
