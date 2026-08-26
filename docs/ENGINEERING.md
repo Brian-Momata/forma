@@ -147,9 +147,20 @@ The React layer owns the interval, and it is the only place that may read the cl
 **Goal and schedule live on the plan, not the person.** A person is not one
 goal: someone can run a strength block at the gym and a mobility plan at home in
 the same week. The profile holds defaults for the *next* plan they create, and
-changing them must never rewrite a plan that already exists. Limitations are the
-exception — they are a safety input, so changing them rebuilds every generated
-plan (hand-edited plans are still left alone).
+changing them must never rewrite a plan that already exists.
+
+**The situation is not a preference, so it does rewrite plans.** A setup's
+equipment and constraints, and the person's limitations and experience, are the
+inputs the generator derived those plans from. When one of them changes, every
+*generated* plan built on it is wrong — it prescribes a barbell that has been
+sold, or loads a knee that now hurts — so all of them are rebuilt, each keeping
+its own id, name, goal and schedule. Plans a person edited or built themselves
+are never rewritten: those are theirs.
+
+**Every screen that generates a plan asks the whole question.** Situation
+answers are confirmed at the point of building, never inherited silently from
+the first plan. Someone whose gym replaced its cables in March should not have
+to remember that a plan generated in June was built from a March answer.
 
 ---
 

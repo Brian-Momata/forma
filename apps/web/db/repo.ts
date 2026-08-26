@@ -139,30 +139,50 @@ export interface PlanRequest {
 }
 
 /**
- * Rebuilds a setup's *generated* plan in place.
+ * Rebuilds *every* generated plan for a setup, in place.
  *
  * Used when the situation itself changes -- new equipment, a new limitation --
- * because the plan was derived from those answers and is now wrong. Plans the
- * person has edited are never touched: those are theirs, not ours to overwrite.
+ * because those plans were derived from the old answers and are now wrong.
+ * Each keeps its own id, name, goal and schedule: one person can run a strength
+ * block and a mobility plan in the same place, and both need rebuilding.
+ *
+ * Plans the person has edited are never touched: those are theirs, not ours to
+ * overwrite. A setup with no plan at all gets its first one here, which is the
+ * onboarding path.
  */
-export async function regenerateSetupPlan(
+export async function regenerateSetupPlans(
   library: Library,
   profile: Profile,
   setup: Setup
-): Promise<Plan | null> {
+): Promise<Plan[]> {
   const existing = await plansForSetup(setup.id);
-  const previous = existing.find((p) => p.generated);
-  if (existing.length > 0 && !previous) return null;
+  const previous = existing.filter((p) => p.generated);
 
-  const plan = generatePlan(library, profile, setup, {
-    now: now(),
-    planId: previous?.id ?? newId("plan"),
-    ...(previous ? { goal: previous.goal, schedule: previous.schedule, name: previous.name } : {}),
-  });
+  if (previous.length === 0) {
+    // Nothing generated here. Only build a first plan if the person has not
+    // already made one by hand -- otherwise we would be adding a plan they
+    // never asked for.
+    if (existing.length > 0) return [];
+    const plan = generatePlan(library, profile, setup, {
+      now: now(),
+      planId: newId("plan"),
+    });
+    await db.plans.put(plan);
+    await setActivePlanId(plan.id);
+    return [plan];
+  }
 
-  await db.plans.put(plan);
-  if (!previous) await setActivePlanId(plan.id);
-  return plan;
+  const rebuilt = previous.map((prior) =>
+    generatePlan(library, profile, setup, {
+      now: now(),
+      planId: prior.id,
+      goal: prior.goal,
+      schedule: prior.schedule,
+      name: prior.name,
+    })
+  );
+  await db.plans.bulkPut(rebuilt);
+  return rebuilt;
 }
 
 /**

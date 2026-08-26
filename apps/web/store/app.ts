@@ -16,7 +16,7 @@ import {
   listPlans,
   listSessions,
   listSetups,
-  regenerateSetupPlan,
+  regenerateSetupPlans,
   saveProfile,
   savePlan,
   saveSetup,
@@ -43,7 +43,7 @@ interface AppStore {
   upsertSetup(setup: Setup): Promise<Setup>;
   activateSetup(id: SetupId): Promise<void>;
 
-  /** Rebuilds a setup's generated plan because the situation itself changed. */
+  /** Rebuilds every generated plan for a setup, because the situation changed. */
   regenerateForSetup(setup?: Setup): Promise<Plan | null>;
   /** Rebuilds every generated plan, for changes that affect them all. */
   regenerateAll(): Promise<void>;
@@ -133,9 +133,9 @@ export const useApp = create<AppStore>((set, get) => ({
     const target = setup ?? get().activeSetup;
     if (!library || !profile || !target) return null;
 
-    const plan = await regenerateSetupPlan(library, profile, target);
+    const [plan] = await regenerateSetupPlans(library, profile, target);
     await get().refresh();
-    return plan;
+    return plan ?? null;
   },
 
   /**
@@ -146,7 +146,7 @@ export const useApp = create<AppStore>((set, get) => ({
     const { library, profile, setups } = get();
     if (!library || !profile) return;
     for (const setup of setups) {
-      await regenerateSetupPlan(library, profile, setup);
+      await regenerateSetupPlans(library, profile, setup);
     }
     await get().refresh();
   },

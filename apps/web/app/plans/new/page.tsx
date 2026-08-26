@@ -2,8 +2,22 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { resolveTier, type Goal, type SetupId } from "@form/core";
+import Link from "next/link";
+import {
+  resolveTier,
+  type EquipmentId,
+  type Experience,
+  type Goal,
+  type Limitation,
+  type Setup,
+  type SetupId,
+} from "@form/core";
 
+import {
+  EquipmentPicker,
+  constraintSummary,
+  equipmentSummary,
+} from "@/components/equipment-picker";
 import { Display, Kicker, PillButton, Screen, ScrollArea } from "@/components/ui";
 import { BackLink } from "@/components/ui/nav";
 import { useBootstrap } from "@/lib/use-bootstrap";
@@ -17,10 +31,49 @@ const GOALS: Array<{ value: Goal; label: string; note: string }> = [
   { value: "general", label: "General fitness", note: "A balanced mix" },
 ];
 
+const LEVELS: Array<{ value: Experience; label: string }> = [
+  { value: "new", label: "Brand new" },
+  { value: "returning", label: "Coming back" },
+  { value: "regular", label: "Fairly regular" },
+  { value: "consistent", label: "Very consistent" },
+];
+
+const LIMITS: Array<{ value: Limitation; label: string }> = [
+  { value: "knees", label: "Knees" },
+  { value: "lower-back", label: "Lower back" },
+  { value: "shoulders", label: "Shoulders" },
+  { value: "wrists", label: "Wrists" },
+  { value: "neck", label: "Neck" },
+];
+
+const sameSet = <T,>(a: readonly T[], b: readonly T[]) =>
+  a.length === b.length && a.every((x) => b.includes(x));
+
+type KitDraft = {
+  setupId: SetupId;
+  equipment: EquipmentId[];
+  constraints: Setup["constraints"];
+};
+
+/**
+ * Building a plan asks every question onboarding asked, because every one of
+ * them changes the plan. Equipment moves, gyms replace machines, and a knee
+ * that was fine in January is not automatically fine in June -- so the answers
+ * are confirmed here rather than inherited silently from the first plan.
+ */
 export default function NewPlanPage() {
   const ready = useBootstrap();
   const router = useRouter();
-  const { setups, profile, activeSetup, addGeneratedPlan, addCustomPlan } = useApp();
+  const {
+    setups,
+    profile,
+    activeSetup,
+    addGeneratedPlan,
+    addCustomPlan,
+    upsertSetup,
+    updateProfile,
+    regenerateAll,
+  } = useApp();
 
   const [name, setName] = useState("");
   const [goal, setGoal] = useState<Goal>("strength");
@@ -28,6 +81,14 @@ export default function NewPlanPage() {
   const [days, setDays] = useState(3);
   const [minutes, setMinutes] = useState(30);
   const [busy, setBusy] = useState(false);
+  const [openKit, setOpenKit] = useState(false);
+
+  // Null means "whatever the setup and profile already say". Switching setups
+  // drops a kit draft that belonged to a different place, which is why the
+  // draft carries its own setupId rather than living in an effect.
+  const [kitDraft, setKitDraft] = useState<KitDraft | null>(null);
+  const [levelDraft, setLevelDraft] = useState<Experience | null>(null);
+  const [limitDraft, setLimitDraft] = useState<Limitation[] | null>(null);
 
   const chosenSetup = setups.find((s) => s.id === setupId) ?? activeSetup ?? setups[0];
 
@@ -43,14 +104,61 @@ export default function NewPlanPage() {
     );
   }
 
+  const kit: KitDraft =
+    kitDraft && kitDraft.setupId === chosenSetup.id
+      ? kitDraft
+      : {
+          setupId: chosenSetup.id,
+          equipment: chosenSetup.equipment,
+          constraints: chosenSetup.constraints,
+        };
+
+  const experience = levelDraft ?? profile.experience;
+  const limitations = limitDraft ?? profile.limitations;
+
+  const kitChanged =
+    !sameSet(kit.equipment, chosenSetup.equipment) ||
+    (["tightSpace", "noJumping", "quiet"] as const).some(
+      (key) => Boolean(kit.constraints[key]) !== Boolean(chosenSetup.constraints[key])
+    );
+  const profileChanged =
+    experience !== profile.experience || !sameSet(limitations, profile.limitations);
+
+  const tier = resolveTier(kit.equipment);
+  const spaceNotes = constraintSummary(kit.constraints);
+
+  const toggleLimit = (value: Limitation) =>
+    setLimitDraft(
+      limitations.includes(value)
+        ? limitations.filter((l) => l !== value)
+        : [...limitations, value]
+    );
+
   const create = async (mode: "generated" | "custom") => {
     setBusy(true);
     try {
+      // Corrections land before the plan is built, so it is built from what is
+      // true now -- and so every other generated plan stops being wrong too.
+      let target = chosenSetup;
+      if (kitChanged) {
+        target = await upsertSetup({
+          ...chosenSetup,
+          equipment: kit.equipment,
+          constraints: kit.constraints,
+        });
+      }
+      if (profileChanged) await updateProfile({ experience, limitations });
+      if (kitChanged || profileChanged) await regenerateAll();
+
       const schedule = { daysPerWeek: days, minutesPerSession: minutes };
       const plan =
         mode === "generated"
-          ? await addGeneratedPlan(chosenSetup, { goal, schedule, ...(name.trim() ? { name: name.trim() } : {}) })
-          : await addCustomPlan(chosenSetup, {
+          ? await addGeneratedPlan(target, {
+              goal,
+              schedule,
+              ...(name.trim() ? { name: name.trim() } : {}),
+            })
+          : await addCustomPlan(target, {
               goal,
               schedule,
               name: name.trim() || "My plan",
@@ -70,8 +178,8 @@ export default function NewPlanPage() {
             New plan
           </Display>
           <p className="mt-[10px] text-[13.5px] leading-[1.55] text-t3">
-            You can keep as many plans as you like — a strength block at the gym and a
-            mobility plan at home run side by side.
+            Everything that shapes a plan is on this screen. Change whatever has moved
+            since last time — the plan is built from these answers, not the old ones.
           </p>
 
           <label className="mt-7 block">
@@ -96,11 +204,58 @@ export default function NewPlanPage() {
               {setup.name}
             </Chip>
           ))}
+          <Link
+            href="/setups/new"
+            className="rounded-full border border-dashed border-hair-14 px-4 py-2 text-[12.5px] font-semibold text-t4 transition-colors hover:border-acc hover:text-acc"
+          >
+            Add a place
+          </Link>
         </div>
-        <p className="px-[22px] pt-2 text-[12px] text-t5">
-          {resolveTier(chosenSetup.equipment).replace("-", " ")} — the plan is built for
-          what is actually there.
-        </p>
+
+        <div className="px-[22px] pt-5">
+          <div
+            className="rounded-[14px] border border-hair-12 p-4"
+            style={{ background: "rgba(255,255,255,.02)" }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <Kicker tone="accent">{tier.replace("-", " ")}</Kicker>
+              <button
+                type="button"
+                onClick={() => setOpenKit((v) => !v)}
+                aria-expanded={openKit}
+                className="shrink-0 text-[12px] font-semibold text-t3 underline underline-offset-4 transition-colors hover:text-acc"
+              >
+                {openKit ? "Done" : "Change"}
+              </button>
+            </div>
+            <p className="mt-2 text-[13px] leading-[1.5] text-t2">
+              {equipmentSummary(kit.equipment)}
+            </p>
+            {spaceNotes.length > 0 && (
+              <p className="mt-[6px] text-[12px] text-t4">{spaceNotes.join(" · ")}</p>
+            )}
+            <p className="mt-[6px] text-[12px] leading-[1.45] text-t5">
+              The plan is built for what is actually here. Nothing you do not have is
+              ever prescribed.
+            </p>
+          </div>
+        </div>
+
+        {openKit && (
+          <>
+            <EquipmentPicker
+              equipment={kit.equipment}
+              constraints={kit.constraints}
+              onEquipmentChange={(equipment) => setKitDraft({ ...kit, equipment })}
+              onConstraintsChange={(constraints) => setKitDraft({ ...kit, constraints })}
+            />
+            <p className="px-[22px] pt-4 text-[12px] leading-[1.5] text-t5">
+              This is what {chosenSetup.name} has, so saving it also rebuilds the other
+              plans we built for {chosenSetup.name}. Plans you edited yourself are left
+              alone.
+            </p>
+          </>
+        )}
 
         <Kicker className="px-[22px] pb-3 pt-8">Training for</Kicker>
         {GOALS.map((option) => {
@@ -154,6 +309,42 @@ export default function NewPlanPage() {
             </Chip>
           ))}
         </div>
+
+        <Kicker className="px-[22px] pb-3 pt-8">Recent training</Kicker>
+        <div className="flex flex-wrap gap-2 px-[22px]">
+          {LEVELS.map((level) => (
+            <Chip
+              key={level.value}
+              on={experience === level.value}
+              onClick={() => setLevelDraft(level.value)}
+            >
+              {level.label}
+            </Chip>
+          ))}
+        </div>
+        <p className="px-[22px] pt-2 text-[12px] leading-[1.5] text-t5">
+          This caps how much we prescribe and which movements are allowed at all.
+        </p>
+
+        <Kicker className="px-[22px] pb-3 pt-8">Working around</Kicker>
+        <div className="flex flex-wrap gap-2 px-[22px]">
+          <Chip on={limitations.length === 0} onClick={() => setLimitDraft([])}>
+            Nothing right now
+          </Chip>
+          {LIMITS.map((limit) => (
+            <Chip
+              key={limit.value}
+              on={limitations.includes(limit.value)}
+              onClick={() => toggleLimit(limit.value)}
+            >
+              {limit.label}
+            </Chip>
+          ))}
+        </div>
+        <p className="px-[22px] pt-2 text-[12px] leading-[1.5] text-t5">
+          Every exercise that loads these is removed. This is about your body rather
+          than one plan, so changing it rebuilds every plan we built for you.
+        </p>
 
         <div className="px-[22px] pb-8 pt-10">
           <PillButton className="w-full" disabled={busy} onClick={() => void create("generated")}>

@@ -224,3 +224,45 @@ test("a person can build a plan from scratch with their own sets and reps", asyn
     timeout: 15_000,
   });
 });
+
+/**
+ * The situation is the input to the plan, so a second plan must ask about it
+ * again rather than inherit the answers the first one was built from.
+ */
+test("building another plan confirms the equipment and injuries first", async ({ page }) => {
+  await completeOnboarding(page);
+  await expect(page.getByRole("button", { name: "Start workout" })).toBeVisible({
+    timeout: 20_000,
+  });
+
+  await page.goto("/plans/new");
+
+  // What we are about to build against is stated, not assumed.
+  await expect(page.getByText("Dumbbells", { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByText("dumbbell", { exact: true })).toBeVisible();
+
+  // The dumbbells are gone, and a knee needs working around.
+  await page.getByRole("button", { name: "Change" }).click();
+  await page.getByRole("button", { name: "Dumbbells" }).click();
+  await expect(page.getByText("Bodyweight only", { exact: false })).toBeVisible();
+  await expect(page.getByText("bodyweight", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Knees", exact: true }).click();
+  await page.getByRole("button", { name: "Build it for me" }).click();
+  await page.waitForURL("**/");
+  await expect(page.getByRole("button", { name: "Start workout" })).toBeVisible({
+    timeout: 20_000,
+  });
+
+  // Both answers stuck: they describe the person and the place, not one plan.
+  await page.goto("/plans/new");
+  await expect(page.getByText("Bodyweight only", { exact: false })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByRole("button", { name: "Knees", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+});
