@@ -137,6 +137,26 @@ describe("safety invariants hold for every situation", () => {
     );
   });
 
+  /**
+   * The reported bug. Warm-up drills were prescribed with zero rest, which the
+   * player reads as "move straight on" -- so a warm-up was four movements back
+   * to back with a six second gap and no breather anywhere in it.
+   */
+  it("gives every warm-up drill a breather after it", () => {
+    fc.assert(
+      fc.property(arbProfile, arbSetup, (profile, setup) => {
+        const plan = generatePlan(library, profile, setup);
+        for (const day of plan.days) {
+          for (const item of day.exercises) {
+            if (!item.warmup) continue;
+            expect(item.prescription.restSec, item.exerciseId).toBeGreaterThan(0);
+          }
+        }
+      }),
+      runs
+    );
+  });
+
   it("caps beginner volume regardless of what the goal asks for", () => {
     fc.assert(
       fc.property(arbProfile, arbSetup, (profile, setup) => {

@@ -133,7 +133,7 @@ export function ExerciseSheet({ library, setup, profile, current, onPick, onClos
         <button type="button" aria-label="Close" className="flex-1 cursor-default" onClick={onClose} />
 
         <div
-          className="flex max-h-[88dvh] flex-col overflow-hidden rounded-t-[26px] border-t border-hair-12 bg-screen"
+          className="flex max-h-[88dvh] flex-col overflow-hidden rounded-t-[26px] border-t border-hair-12 bg-screen text-t1"
           style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom))" }}
         >
           <div className="mx-auto mb-4 mt-[18px] h-[3px] w-[38px] shrink-0 rounded-full bg-white/22" />

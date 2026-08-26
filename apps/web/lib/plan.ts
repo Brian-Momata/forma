@@ -49,7 +49,9 @@ export function resolveDay(
       restSec: item.prescription.restSec,
       warmup: item.warmup,
       cues: exercise.cues,
+      steps: exercise.steps,
       images: exercise.images,
+      unilateral: exercise.unilateral,
       loadable: !item.warmup && exercise.requires.some((r) => LOADABLE.has(r)),
       targetWeightKg: item.prescription.targetWeightKg ?? null,
     });

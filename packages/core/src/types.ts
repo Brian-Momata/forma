@@ -179,10 +179,32 @@ export const Exercise = z.object({
    */
   dynamic: z.boolean(),
   spaceNeeded: z.enum(["tight", "normal"]),
+  /**
+   * Worked one side at a time.
+   *
+   * Alternating movements -- walking lunges, marching bridges -- are false:
+   * they already train both sides inside a set, and pausing them to "switch
+   * sides" would be nonsense. True means the player owes the person a switch.
+   */
   unilateral: z.boolean(),
 
   /** The design shows exactly two. Long-tail entries fall back to condensed source text. */
   cues: z.array(z.string().min(1)),
+
+  /**
+   * The full how-to, one instruction per step, in order.
+   *
+   * Two short cues are enough to remind someone of a movement they know; they
+   * are not enough to teach one. The demo photos are two frames of a range of
+   * motion and cannot show tempo, breathing, or what "keep the legs straight"
+   * is protecting -- so the steps carry the actual form, and the cues stay
+   * what they were: the two things to remember mid-set.
+   *
+   * Defaulted rather than required so a library built before this existed
+   * still parses.
+   */
+  steps: z.array(z.string().min(1)).default([]),
+
   images: z.array(z.string()),
 
   /**

@@ -1,6 +1,7 @@
 import { resolveArchetype, type Archetype, type DayTemplate, type Slot } from "./archetypes.ts";
 import { resolveTier } from "./equipment.ts";
 import type { Library } from "./library/index.ts";
+import { MAX_TRANSITION_SEC, TRANSITION_SEC } from "./player.ts";
 import { eligibleForPattern, type SelectionContext } from "./selection.ts";
 import type {
   Exercise,
@@ -50,11 +51,10 @@ function mulberry32(seed: number): () => number {
 /** Seconds a single rep takes, averaged across tempos. Used only for budgeting. */
 const SECONDS_PER_REP = 3;
 const READY_SEC = 3;
-const TRANSITION_SEC = 6;
 
 export function estimateExerciseSeconds(p: Prescription): number {
   const work = p.durationSec ?? (p.reps ?? 0) * SECONDS_PER_REP;
-  // The last set of an exercise flows into the transition, not another rest.
+  // The last set of an exercise flows into the changeover, not another rest.
   return p.sets * work + Math.max(0, p.sets - 1) * p.restSec;
 }
 
@@ -70,10 +70,21 @@ export function weekdayFor(index: number, total: number): number | null {
   return Math.floor((index * 7) / total) % 7;
 }
 
+/** Mirrors the player's changeover between two movements, for budgeting. */
+function changeoverSeconds(restSec: number): number {
+  return Math.min(MAX_TRANSITION_SEC, Math.max(TRANSITION_SEC, restSec));
+}
+
 export function estimateDaySeconds(day: PlanDay): number {
   let total = 0;
   for (const item of day.exercises) {
-    total += estimateExerciseSeconds(item.prescription) + READY_SEC + TRANSITION_SEC;
+    // The changeover is not a fixed six seconds any more -- it grows with the
+    // rest the movement prescribes -- so the budget has to grow with it too,
+    // or every generated session would quietly overrun the time asked for.
+    total +=
+      estimateExerciseSeconds(item.prescription) +
+      READY_SEC +
+      changeoverSeconds(item.prescription.restSec);
   }
   return total;
 }
@@ -166,6 +177,14 @@ function prescribe(exercise: Exercise, arch: Archetype, slot: Slot): Prescriptio
 }
 
 /**
+ * The breather between two warm-up drills.
+ *
+ * Short enough that the warm-up still flows, long enough to change position
+ * and read what is next.
+ */
+const WARMUP_REST_SEC = 20;
+
+/**
  * Safety rule 3: every session gets a warm-up matched to its patterns.
  *
  * Built after the working set is chosen, and scored by muscle overlap with it,
@@ -213,7 +232,10 @@ function buildWarmup(
       prescription: {
         sets: 1,
         durationSec: e.defaults.durationSec ?? 30,
-        restSec: 0,
+        // Not zero. A warm-up drill needs a breath and a set-up before the
+        // next one, and this is what the player's changeover is sized from --
+        // "no rest" used to mean the session moved on six seconds later.
+        restSec: WARMUP_REST_SEC,
       },
     };
   });

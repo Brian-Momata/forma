@@ -284,6 +284,14 @@ configurable and not overridable by a template.
 
 **When two rules conflict, the more conservative one wins.**
 
+**One-sided movements are trained on both sides.** A timed set of a `unilateral`
+exercise is halved and run once per side with a `switch` phase between, so the clock
+cannot run out on the left leg and move the session on. The prescription is therefore
+*both sides' worth* -- a 60s side plank is 30s a side -- and the library asserts it.
+Alternating movements (walking lunges, marching bridges) are not `unilateral`: they
+already train both sides inside the set. Rep sets are never split, because the person
+ends them; the screen says "each side" instead.
+
 ### What these rules do and do not govern
 
 They govern what the app **prescribes**: anything the generator puts in front of
@@ -302,8 +310,17 @@ unaffected, and are still asserted as properties.
 
 - **Timers announce at meaningful intervals** — halfway, ten seconds, done — via
   `aria-live="polite"`. Announcing every second is unusable with a screen reader.
-- The end-of-set tone always has a visual equivalent. The design's "TONE" burst already
-  does this well; keep it.
+- **Every phase change has a tone, and every tone has a visual equivalent.** The tone is
+  chosen from *why* the machine moved (`ChimeKind`), not from the phase it landed in --
+  a set ending, an exercise ending and "change sides" are three different instructions,
+  and someone with the phone in a pocket has only the sound to tell them apart. The
+  design's burst carries the visual half; it is a mark, not the word "TONE", because
+  nobody needs to be told a sound is playing while it is playing.
+- **Audio is unlocked from a real gesture.** iOS will not resume an `AudioContext`
+  outside a gesture handler, and an effect that runs after a tap has already left it.
+  `AudioUnlock` is mounted at the root and listens for the first pointer or key event
+  anywhere in the app. Without it every timed phase passes in silence while rep sets --
+  whose tone fires from a click -- sound fine, which is exactly how the bug hid.
 - Touch targets ≥44px. The design's 56–60px buttons pass comfortably.
 - Respect `prefers-reduced-motion` for all five keyframes.
 - Full keyboard operability, including the player controls.

@@ -13,7 +13,7 @@ import { newSession, readCheckpoint, saveSession } from "@/db/repo";
 import { useApp } from "@/store/app";
 import { useSession, type SessionCheckpoint } from "@/store/session";
 
-import { ReadyPhase, RestPhase, SetPhase, TransitionPhase } from "./phases";
+import { ReadyPhase, RestPhase, SetPhase, SwitchPhase, TransitionPhase } from "./phases";
 
 /** Older than this and a checkpoint is a memory, not a session in progress. */
 const STALE_SESSION_MS = 6 * 60 * 60 * 1000;
@@ -179,6 +179,8 @@ function WorkoutScreen() {
       return <ReadyPhase state={player} />;
     case "set":
       return <SetPhase state={player} onExit={exit} units={profile?.units ?? "kg"} />;
+    case "switch":
+      return <SwitchPhase state={player} />;
     case "rest":
       return <RestPhase state={player} onExit={exit} />;
     case "transition":

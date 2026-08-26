@@ -24,6 +24,56 @@ describe("exercise library integrity", () => {
     }
   });
 
+  /**
+   * Two cues are a reminder, not a lesson. The reported complaint was exactly
+   * this: the tips were not descriptive enough and the two demo stills cannot
+   * show what good form is, so a curated movement now owes the person the
+   * actual steps.
+   */
+  it("gives every curated exercise a real step-by-step guide", () => {
+    for (const e of library.core) {
+      expect(e.steps.length, e.id).toBeGreaterThanOrEqual(3);
+      for (const step of e.steps) {
+        expect(step.trim().length, `${e.id}: "${step}"`).toBeGreaterThan(12);
+        // Truncated source prose is not a step; it is the start of one.
+        expect(step.endsWith("..."), `${e.id}: "${step}"`).toBe(false);
+      }
+    }
+  });
+
+  /**
+   * A one-sided timed movement is halved by the player and run once per side,
+   * so its prescription has to be two sides' worth. Prescribing a per-side dose
+   * here would quietly train the movement for half as long as it reads.
+   */
+  it("prescribes both sides' worth for one-sided timed work", () => {
+    for (const e of library.core) {
+      if (!e.unilateral || e.kind !== "time") continue;
+      expect(e.defaults.durationSec ?? 0, e.id).toBeGreaterThanOrEqual(30);
+    }
+  });
+
+  /**
+   * The reported bug. A warm-up drill with zero rest gave the player nothing to
+   * size a changeover from, so one movement ended and the next began six
+   * seconds later -- and the screen said "no rest" out loud.
+   */
+  it("never prescribes a mobility drill with no rest at all", () => {
+    const mobility = library.core.filter((e) => e.pattern === "mobility");
+    expect(mobility.length).toBeGreaterThan(0);
+    for (const e of mobility) {
+      expect(e.defaults.restSec, e.id).toBeGreaterThan(0);
+    }
+  });
+
+  /** Alternating work trains both sides inside the set; it owes nobody a switch. */
+  it("does not call an alternating movement one-sided", () => {
+    for (const e of library.all) {
+      if (!/alternat|walking|bicycle|air bike|\bmarch/i.test(e.name)) continue;
+      expect(e.unilateral, e.id).toBe(false);
+    }
+  });
+
   it("gives every curated exercise a usable prescription", () => {
     for (const e of library.core) {
       if (e.kind === "reps") expect(e.defaults.reps, e.id).toBeDefined();

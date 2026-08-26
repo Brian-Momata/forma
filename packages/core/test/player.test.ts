@@ -2,23 +2,29 @@ import { describe, expect, it } from "vitest";
 
 import {
   CHIME_MS,
+  MAX_TRANSITION_SEC,
   READY_SEC,
+  SWITCH_SEC,
   TRANSITION_SEC,
   abandon,
   addRest,
   advance,
   completeSet,
   completedSets,
+  doseText,
   elapsedSec,
   isChiming,
   phaseProgress,
   remainingSec,
   skip,
+  splitsSides,
   start,
   setWeight,
   tick,
   togglePause,
   totalSets,
+  transitionSeconds,
+  type ChimeKind,
   type PlayerItem,
   type PlayerState,
 } from "../src/player.ts";
@@ -34,7 +40,9 @@ const timed = (id: string, sets: number, durationSec: number, restSec: number): 
   restSec,
   warmup: false,
   cues: ["a", "b"],
+  steps: [],
   images: [],
+  unilateral: false,
   loadable: false,
   targetWeightKg: null,
 });
@@ -49,10 +57,14 @@ const repped = (id: string, sets: number, reps: number, restSec: number): Player
   restSec,
   warmup: false,
   cues: ["a", "b"],
+  steps: [],
   images: [],
+  unilateral: false,
   loadable: false,
   targetWeightKg: null,
 });
+
+const oneSided = (item: PlayerItem): PlayerItem => ({ ...item, unilateral: true });
 
 const T0 = 1_000_000;
 const at = (sec: number) => T0 + sec * 1000;
@@ -119,6 +131,36 @@ describe("player state machine", () => {
 
     // ready ends, set 1 ends, rest ends, set 2 ends.
     expect(chimes).toEqual([READY_SEC, READY_SEC + 5, READY_SEC + 10, READY_SEC + 15]);
+  });
+
+  /**
+   * The other half of the reported bug: the tone was chosen from the phase the
+   * machine landed in, so an exercise ending and a rest ending sounded the
+   * same, and a changeover was not distinguished at all.
+   */
+  it("says why it chimed, not merely that it did", () => {
+    const items = [timed("A", 2, 5, 5), timed("B", 1, 5, 0)];
+    let s = start(items, T0);
+    const kinds: ChimeKind[] = [];
+
+    for (let i = 1; i <= 120; i++) {
+      const next = tick(s, at(i));
+      if (next.chimeAt !== null && next.chimeAt !== s.chimeAt) {
+        kinds.push(next.chimeKind as ChimeKind);
+      }
+      s = next;
+      if (s.phase === "complete") break;
+    }
+
+    expect(kinds).toEqual([
+      "rest-end", // get-ready done: go
+      "set-end", // set one of A
+      "rest-end", // rest over: go
+      "exercise-end", // A is finished
+      "next", // changeover done, B is up
+      "rest-end", // get-ready done: go
+      "finish",
+    ]);
   });
 
   it("shows the chime for its animation window then stops", () => {
@@ -251,6 +293,133 @@ describe("progress reporting", () => {
     expect(s.phase).toBe("transition");
     s = runFor(s, TRANSITION_SEC, READY_SEC + 5);
     expect(s.phase).toBe("ready");
+  });
+
+  /**
+   * The reported bug: warm-up drills were prescribed with zero rest, so a
+   * movement ended and the next one started six seconds later. There was no
+   * breather anywhere in a warm-up, and the screen said "no rest" out loud.
+   */
+  it("sizes the changeover from the rest the finished movement prescribed", () => {
+    expect(transitionSeconds(timed("A", 1, 30, 0))).toBe(TRANSITION_SEC);
+    expect(transitionSeconds(timed("A", 1, 30, 20))).toBe(20);
+    // Capped: a 90s rest belongs between sets, not before the next movement.
+    expect(transitionSeconds(timed("A", 1, 30, 90))).toBe(MAX_TRANSITION_SEC);
+  });
+
+  it("gives a warm-up drill its breather before the next one", () => {
+    const warm = { ...timed("A", 1, 20, 20), warmup: true };
+    let s = start([warm, { ...timed("B", 1, 20, 20), warmup: true }], T0);
+    s = runFor(s, READY_SEC + 20);
+    expect(s.phase).toBe("transition");
+
+    // Six seconds in, it is still a changeover rather than the next drill.
+    s = runFor(s, TRANSITION_SEC, READY_SEC + 20);
+    expect(s.phase).toBe("transition");
+
+    s = runFor(s, 20 - TRANSITION_SEC, READY_SEC + 20 + TRANSITION_SEC);
+    expect(s.phase).toBe("ready");
+  });
+});
+
+/**
+ * The reported bug in full: a timed one-sided movement ran its clock once and
+ * the session moved on, so whichever side you did not start on was never
+ * trained. It is now two halves with a switch beat between them.
+ */
+describe("movements worked one side at a time", () => {
+  it("splits a timed set into two sides with a switch between", () => {
+    const item = oneSided(timed("Side Plank", 1, 40, 30));
+    expect(splitsSides(item)).toBe(true);
+
+    let s = start([item], T0);
+    expect(s.side).toBe("left");
+
+    s = runFor(s, READY_SEC);
+    expect(s.phase).toBe("set");
+    expect(s.side).toBe("left");
+    // Half the prescribed forty, so both sides fit the dose the plan budgeted.
+    expect(remainingSec(s, at(READY_SEC))).toBe(20);
+
+    s = runFor(s, 20, READY_SEC);
+    expect(s.phase).toBe("switch");
+    expect(s.chimeKind).toBe("switch");
+    // Nothing is banked yet: the set is half done, not done.
+    expect(s.records).toHaveLength(0);
+
+    s = runFor(s, SWITCH_SEC, READY_SEC + 20);
+    expect(s.phase).toBe("set");
+    expect(s.side).toBe("right");
+    expect(remainingSec(s, at(READY_SEC + 20 + SWITCH_SEC))).toBe(20);
+
+    s = runFor(s, 20, READY_SEC + 20 + SWITCH_SEC);
+    expect(s.phase).toBe("complete");
+    expect(completedSets(s)).toBe(1);
+  });
+
+  it("runs both sides of every set, not just the first", () => {
+    let s = start([oneSided(timed("A", 2, 40, 10))], T0);
+    const phases: string[] = [];
+    for (let i = 1; i <= 200; i++) {
+      const next = tick(s, at(i));
+      if (next.phase !== s.phase) phases.push(next.phase);
+      s = next;
+      if (s.phase === "complete") break;
+    }
+    expect(phases).toEqual([
+      "set", "switch", "set", "rest", "set", "switch", "set", "complete",
+    ]);
+  });
+
+  it("leaves a two-sided set alone when it is too short to halve", () => {
+    // Seven seconds a side is not a set, it is an interruption.
+    const item = oneSided(timed("A", 1, 14, 10));
+    expect(splitsSides(item)).toBe(false);
+
+    let s = start([item], T0);
+    s = runFor(s, READY_SEC + 14);
+    expect(s.phase).toBe("complete");
+  });
+
+  it("never splits a rep set, which the person ends themselves", () => {
+    const item = oneSided(repped("One-Arm Row", 1, 10, 60));
+    expect(splitsSides(item)).toBe(false);
+    expect(doseText(item)).toBe("10 reps each side");
+
+    let s = start([item], T0);
+    s = runFor(s, READY_SEC);
+    s = completeSet(s, at(READY_SEC + 30));
+    expect(s.phase).toBe("complete");
+  });
+
+  it("abandons the whole set on skip rather than sending you to the other side", () => {
+    let s = start([oneSided(timed("A", 1, 40, 0)), timed("B", 1, 10, 0)], T0);
+    s = runFor(s, READY_SEC);
+    expect(s.phase).toBe("set");
+
+    s = skip(s, at(READY_SEC + 2));
+    expect(s.phase).toBe("transition");
+    expect(s.records[0]?.skipped).toBe(true);
+  });
+
+  it("resets to the left for each new set and each new movement", () => {
+    let s = start([oneSided(timed("A", 2, 40, 10)), timed("B", 1, 10, 0)], T0);
+    s = runFor(s, READY_SEC + 20 + SWITCH_SEC + 20);
+    expect(s.phase).toBe("rest");
+    expect(s.side).toBe("left");
+
+    let t = READY_SEC + 20 + SWITCH_SEC + 20;
+    while (s.phase !== "ready" && t < 400) s = tick(s, at(++t));
+    expect(s.phase).toBe("ready");
+    // A two-handed movement has no side at all.
+    expect(s.side).toBeNull();
+  });
+
+  it("says the dose per side, because half a dose is the failure mode", () => {
+    expect(doseText(timed("A", 1, 40, 0))).toBe("40s");
+    expect(doseText(oneSided(timed("A", 1, 40, 0)))).toBe("20s each side");
+    expect(doseText(oneSided(timed("A", 1, 14, 0)))).toBe("14s each side");
+    expect(doseText(repped("A", 1, 12, 0))).toBe("12 reps");
   });
 });
 

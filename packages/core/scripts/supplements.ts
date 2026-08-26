@@ -35,6 +35,7 @@ const ex = (
     spaceNeeded: "tight",
     unilateral: false,
     images: [],
+    steps: [],
     chainId: null,
     chainRank: null,
     core: true,
@@ -59,6 +60,13 @@ export const SUPPLEMENTS: Draft[] = [
     isLoud: true,
     contraindications: ["knees"],
     cues: ["Land softly through the whole foot", "Keep knees soft, never locked out"],
+    steps: [
+      "Stand tall with your feet together and your arms relaxed at your sides.",
+      "Jump your feet out to a little wider than your shoulders as you sweep both arms overhead.",
+      "Land on the balls of your feet first and let the heels settle, keeping the knees soft.",
+      "Jump the feet back together and bring the arms back down in the same rhythm.",
+      "Breathe steadily and keep the contacts quiet rather than fast.",
+    ],
     defaults: time(2, 40, 20),
   }),
   ex("March_In_Place", "March in Place", {
@@ -66,6 +74,13 @@ export const SUPPLEMENTS: Draft[] = [
     kind: "time",
     primaryMuscles: ["quadriceps"],
     cues: ["Drive the knee to hip height", "Stay tall, ribs stacked over hips"],
+    steps: [
+      "Stand tall with your feet under your hips and your ribs stacked over your pelvis.",
+      "Drive one knee up to hip height, keeping the standing leg long.",
+      "Swing the opposite arm forward as the knee comes up.",
+      "Place the foot down softly and repeat on the other leg.",
+      "Keep the pace even; this is a warm-up, not a sprint.",
+    ],
     defaults: time(2, 40, 20),
   }),
   ex("High_Knees", "High Knees", {
@@ -77,6 +92,13 @@ export const SUPPLEMENTS: Draft[] = [
     isLoud: true,
     contraindications: ["knees"],
     cues: ["Stay on the balls of your feet", "Quick, light contacts with the floor"],
+    steps: [
+      "Stand tall with your feet under your hips and your weight on the balls of your feet.",
+      "Drive one knee up to hip height and immediately swap.",
+      "Keep contacts light and quick, landing under your hips rather than in front.",
+      "Pump the arms in time with the legs, elbows bent to ninety degrees.",
+      "Stay upright; if you start leaning back, slow the cadence down.",
+    ],
     defaults: time(2, 30, 30),
   }),
   ex("Burpee", "Burpee", {
@@ -89,6 +111,14 @@ export const SUPPLEMENTS: Draft[] = [
     level: "intermediate",
     contraindications: ["knees", "wrists", "lower-back"],
     cues: ["Plant both hands before stepping back", "Stand fully tall at the top"],
+    steps: [
+      "Stand with your feet shoulder width apart.",
+      "Squat down and plant both hands on the floor just outside your feet.",
+      "Step or jump both feet back into a straight plank, hips level with the shoulders.",
+      "Lower the chest to the floor if you are pressing, then push back up.",
+      "Jump or step the feet back to your hands and stand fully tall.",
+      "Finish each rep standing upright before starting the next one.",
+    ],
     defaults: reps(3, 8, 60),
   }),
 
@@ -100,6 +130,13 @@ export const SUPPLEMENTS: Draft[] = [
     secondaryMuscles: ["glutes"],
     contraindications: ["knees"],
     cues: ["Thighs parallel, back flat to the wall", "Push through the heels, breathe steadily"],
+    steps: [
+      "Stand with your back flat against a wall and your feet about two foot-lengths out.",
+      "Slide down the wall until your thighs are parallel to the floor.",
+      "Set your knees directly over your ankles, not past your toes.",
+      "Press your whole back into the wall and let your arms hang or rest on your thighs.",
+      "Push through the heels and breathe steadily for the full hold.",
+    ],
     defaults: time(2, 40, 45),
   }),
   // Also deliberately knee-safe: the bench caps depth. See Assisted_Squat.
@@ -109,6 +146,13 @@ export const SUPPLEMENTS: Draft[] = [
     primaryMuscles: ["quadriceps"],
     secondaryMuscles: ["glutes"],
     cues: ["Sit back to the box, don't drop", "Stand up without rocking forward"],
+    steps: [
+      "Stand in front of a bench or box with your feet shoulder width apart.",
+      "Push the hips back and sit down under control until you touch the bench.",
+      "Keep the weight in your mid-foot and your chest tall as you sit.",
+      "Pause on the bench for a beat without rocking backwards.",
+      "Drive through the floor and stand up without leaning your chest forward.",
+    ],
     defaults: reps(3, 12, 60),
   }),
   // Deliberately carries no knee contraindication: holding a support and
@@ -124,6 +168,13 @@ export const SUPPLEMENTS: Draft[] = [
     chainId: "squat-bw",
     chainRank: 1,
     cues: ["Hold a doorframe for balance only", "Sit between the hips, chest tall"],
+    steps: [
+      "Hold a doorframe, a post, or a suspension strap at about chest height.",
+      "Set your feet shoulder width apart with the toes turned slightly out.",
+      "Sit down between your hips, using the support only for balance, not to pull.",
+      "Go as deep as you can while keeping your heels down and your chest tall.",
+      "Drive through the whole foot to stand, squeezing the glutes at the top.",
+    ],
     defaults: reps(2, 10, 60),
   }),
   ex("Pistol_Squat", "Pistol Squat", {
@@ -137,6 +188,13 @@ export const SUPPLEMENTS: Draft[] = [
     chainRank: 5,
     contraindications: ["knees"],
     cues: ["Reach the arms forward to counterbalance", "Control the descent, no collapsing"],
+    steps: [
+      "Stand on one leg with the other leg held straight out in front of you.",
+      "Reach both arms forward to counterbalance.",
+      "Sit back and down slowly, keeping the heel of the standing foot flat.",
+      "Descend as far as you can control, then reverse without collapsing.",
+      "Stand all the way up before starting the next rep.",
+    ],
     defaults: reps(3, 5, 90),
   }),
 
@@ -147,14 +205,29 @@ export const SUPPLEMENTS: Draft[] = [
     secondaryMuscles: ["glutes", "lower-back"],
     contraindications: ["lower-back"],
     cues: ["Push the hips back, shins vertical", "Stop when the hamstrings tighten"],
+    steps: [
+      "Stand with your feet hip width apart and your hands lightly behind your head.",
+      "Take a breath and brace your midsection.",
+      "Push your hips straight back, letting your chest travel forward as one piece.",
+      "Keep your shins vertical and your back flat the whole way.",
+      "Stop when you feel the hamstrings tighten, then drive the hips forward to stand.",
+    ],
     defaults: reps(2, 12, 45),
   }),
+  // Not unilateral: marching alternates legs inside the set, so pausing it to
+  // "switch sides" would be nonsense.
   ex("Glute_Bridge_March", "Glute Bridge March", {
     pattern: "hinge",
     primaryMuscles: ["glutes"],
     secondaryMuscles: ["hamstrings", "abdominals"],
-    unilateral: true,
     cues: ["Keep the hips level as you lift", "Squeeze the glutes, not the lower back"],
+    steps: [
+      "Lie on your back with your knees bent and your feet flat, close to your hips.",
+      "Drive through your heels and lift your hips until your body is a straight line.",
+      "Hold that height and lift one knee toward your chest without dropping the hip.",
+      "Place the foot back down and lift the other knee the same way.",
+      "Keep the hips level and square throughout; that is the whole point of the drill.",
+    ],
     defaults: reps(3, 10, 45),
   }),
 
@@ -166,6 +239,13 @@ export const SUPPLEMENTS: Draft[] = [
     unilateral: true,
     contraindications: ["knees"],
     cues: ["Step back and drop the back knee", "Keep the front shin near vertical"],
+    steps: [
+      "Stand tall with your feet under your hips.",
+      "Step one foot straight back and lower until the back knee is just off the floor.",
+      "Keep the front shin close to vertical and the front heel planted.",
+      "Stay upright rather than folding over the front leg.",
+      "Push through the front heel to bring the back foot home and stand tall.",
+    ],
     defaults: reps(3, 10, 60),
   }),
   ex("Bulgarian_Split_Squat", "Bulgarian Split Squat", {
@@ -177,6 +257,13 @@ export const SUPPLEMENTS: Draft[] = [
     level: "intermediate",
     contraindications: ["knees"],
     cues: ["Front foot far enough forward to stay vertical", "Lower straight down, not forward"],
+    steps: [
+      "Stand a stride length in front of a bench and place the top of one foot on it behind you.",
+      "Adjust until the front shin can stay near vertical at the bottom.",
+      "Lower straight down by bending the front knee, letting the back knee travel toward the floor.",
+      "Keep your chest tall and your hips square; do not lean over the front leg.",
+      "Drive through the front heel back to the top, then repeat.",
+    ],
     defaults: reps(3, 8, 75),
   }),
 
@@ -188,6 +275,13 @@ export const SUPPLEMENTS: Draft[] = [
     chainId: "push-bw",
     chainRank: 1,
     cues: ["Body in one line from head to heels", "Elbows back at 45 degrees, not flared"],
+    steps: [
+      "Stand an arm's length from a wall and place both hands on it at chest height.",
+      "Set your hands a little wider than your shoulders.",
+      "Keep your body in one line from head to heels and brace your midsection.",
+      "Bend the elbows to about forty-five degrees and bring your chest toward the wall.",
+      "Press back to full arm's length without letting the hips sag or pike.",
+    ],
     defaults: reps(2, 12, 45),
   }),
   ex("Knee_Push-Up", "Knee Push-Up", {
@@ -198,6 +292,13 @@ export const SUPPLEMENTS: Draft[] = [
     chainId: "push-bw",
     chainRank: 3,
     cues: ["Hips forward so the line stays straight", "Chest to the floor, not the chin"],
+    steps: [
+      "Kneel down and place your hands a little wider than shoulder width on the floor.",
+      "Walk the knees back until your hips, shoulders and knees form one straight line.",
+      "Brace your midsection and tuck the ribs down.",
+      "Lower your chest, not your chin, toward the floor with the elbows at forty-five degrees.",
+      "Press back up to full arm's length, keeping that straight line the whole time.",
+    ],
     defaults: reps(3, 10, 45),
   }),
   ex("Archer_Push-Up", "Archer Push-Up", {
@@ -211,6 +312,13 @@ export const SUPPLEMENTS: Draft[] = [
     chainId: "push-bw",
     chainRank: 6,
     cues: ["Straight arm stays locked and wide", "Lower to the working side only"],
+    steps: [
+      "Set up in a push-up position with your hands much wider than your shoulders.",
+      "Shift your weight over one hand as you bend that elbow.",
+      "Keep the other arm straight and let it slide out wide as you lower.",
+      "Bring the chest down toward the working hand only.",
+      "Press back to the middle and repeat on the other side.",
+    ],
     defaults: reps(3, 5, 90),
   }),
 
@@ -224,6 +332,13 @@ export const SUPPLEMENTS: Draft[] = [
     chainId: "vpush-bw",
     chainRank: 2,
     cues: ["Hips high, head between the hands", "Crown of the head to the floor"],
+    steps: [
+      "Start in a push-up position, then walk your feet in and push your hips high.",
+      "Your body should look like an upside-down V with straight arms and legs.",
+      "Bend the elbows and lower the crown of your head toward the floor between your hands.",
+      "Keep the elbows tracking forward rather than flaring straight out.",
+      "Press back up until the arms are fully long.",
+    ],
     defaults: reps(3, 8, 60),
   }),
   ex("Incline_Pike_Push-Up", "Incline Pike Push-Up", {
@@ -234,6 +349,13 @@ export const SUPPLEMENTS: Draft[] = [
     chainId: "vpush-bw",
     chainRank: 1,
     cues: ["Hands on the floor, feet on a step", "Press straight up, ears past the arms"],
+    steps: [
+      "Place your hands on the floor and your feet on a step or low box.",
+      "Push the hips high so your torso is close to vertical.",
+      "Lower the crown of your head toward the floor between your hands.",
+      "Keep the midsection braced so the lower back does not arch.",
+      "Press straight up until your ears pass your arms.",
+    ],
     defaults: reps(3, 10, 60),
   }),
   ex("Band_Overhead_Press", "Band Overhead Press", {
@@ -243,6 +365,13 @@ export const SUPPLEMENTS: Draft[] = [
     secondaryMuscles: ["triceps"],
     contraindications: ["shoulders"],
     cues: ["Stand on the band, brace the ribs down", "Press until the arms are fully long"],
+    steps: [
+      "Stand on the middle of the band with your feet hip width apart.",
+      "Hold a handle in each hand at shoulder height, palms facing forward.",
+      "Brace your midsection and pull your ribs down so you do not lean back.",
+      "Press the handles straight up until the arms are fully long.",
+      "Lower under control back to shoulder height.",
+    ],
     defaults: reps(3, 12, 60),
   }),
 
@@ -257,6 +386,13 @@ export const SUPPLEMENTS: Draft[] = [
     secondaryMuscles: ["glutes"],
     contraindications: ["knees"],
     cues: ["Stand on the band, handles at the shoulders", "Sit down between the hips, chest tall"],
+    steps: [
+      "Stand on the middle of the band with your feet shoulder width apart.",
+      "Bring the handles up to your shoulders, elbows in front of you.",
+      "Take a breath and brace, then sit down between your hips.",
+      "Keep your chest tall and your knees tracking out over your toes.",
+      "Drive through the whole foot to stand, keeping tension on the band.",
+    ],
     defaults: reps(3, 14, 60),
   }),
   ex("Band_Romanian_Deadlift", "Band Romanian Deadlift", {
@@ -265,6 +401,13 @@ export const SUPPLEMENTS: Draft[] = [
     primaryMuscles: ["hamstrings"],
     secondaryMuscles: ["glutes"],
     cues: ["Stand on the band, hinge from the hips", "Keep tension the whole way up"],
+    steps: [
+      "Stand on the middle of the band with your feet hip width apart, a handle in each hand.",
+      "Stand tall, then take a breath and brace your midsection.",
+      "Push your hips straight back, letting the handles travel down your thighs.",
+      "Keep your back flat and your shins near vertical.",
+      "Stop when the hamstrings tighten, then drive the hips forward to stand tall.",
+    ],
     defaults: reps(3, 14, 60),
   }),
   ex("Band_Chest_Press", "Band Chest Press", {
@@ -273,6 +416,13 @@ export const SUPPLEMENTS: Draft[] = [
     primaryMuscles: ["chest"],
     secondaryMuscles: ["triceps", "shoulders"],
     cues: ["Anchor the band behind you at chest height", "Press to full length, resist coming back"],
+    steps: [
+      "Anchor the band behind you at about chest height and take a handle in each hand.",
+      "Step forward until there is tension, one foot slightly ahead for balance.",
+      "Start with the handles beside your chest, elbows at about forty-five degrees.",
+      "Press both handles forward until the arms are fully long.",
+      "Resist the band on the way back rather than letting it snap you in.",
+    ],
     defaults: reps(3, 14, 60),
   }),
   ex("Band_Woodchop", "Band Woodchop", {
@@ -283,6 +433,13 @@ export const SUPPLEMENTS: Draft[] = [
     unilateral: true,
     contraindications: ["lower-back"],
     cues: ["Turn from the ribs, hips stay quiet", "Arms stay long, let the trunk do it"],
+    steps: [
+      "Anchor the band low to one side and hold the handle in both hands.",
+      "Stand with your feet shoulder width apart, side-on to the anchor.",
+      "Keep your arms long and your hips facing forward.",
+      "Turn from the ribs and pull the handle up and across to the opposite shoulder.",
+      "Return slowly along the same path, letting the trunk do the work.",
+    ],
     defaults: reps(2, 12, 45),
   }),
 
@@ -292,6 +449,13 @@ export const SUPPLEMENTS: Draft[] = [
     primaryMuscles: ["middle-back"],
     secondaryMuscles: ["biceps", "lats"],
     cues: ["Grip both sides of a solid doorframe", "Lean back, pull the chest to the frame"],
+    steps: [
+      "Grip both sides of a solid doorframe at about chest height.",
+      "Walk your feet forward and lean back with your arms straight.",
+      "Keep your body in one line from head to heels and brace your midsection.",
+      "Pull your chest toward the frame, driving the elbows past your ribs.",
+      "Squeeze the shoulder blades together, then lower under control.",
+    ],
     defaults: reps(3, 12, 60),
   }),
   ex("Band_Row", "Band Row", {
@@ -300,6 +464,13 @@ export const SUPPLEMENTS: Draft[] = [
     primaryMuscles: ["middle-back"],
     secondaryMuscles: ["biceps", "lats"],
     cues: ["Pull the elbows past the ribs", "Shoulder blades together at the end"],
+    steps: [
+      "Anchor the band at about waist height, or sit and loop it around your feet.",
+      "Hold a handle in each hand with your arms long and a little tension already on.",
+      "Sit or stand tall with your chest up and your shoulders down.",
+      "Pull the elbows straight back past your ribs.",
+      "Squeeze the shoulder blades together at the end, then return slowly.",
+    ],
     defaults: reps(3, 14, 60),
   }),
   ex("Band_Pull-Apart", "Band Pull-Apart", {
@@ -309,6 +480,13 @@ export const SUPPLEMENTS: Draft[] = [
     secondaryMuscles: ["shoulders"],
     mechanic: "isolation",
     cues: ["Arms long, lead with the knuckles", "Slow all the way back to the front"],
+    steps: [
+      "Hold the band in both hands at shoulder height with your arms straight out in front.",
+      "Set your hands about shoulder width apart so there is light tension.",
+      "Keep the arms long and lead with the knuckles.",
+      "Pull the band apart until your arms are out in a wide T.",
+      "Return all the way to the front slowly rather than letting it snap back.",
+    ],
     defaults: reps(2, 15, 45),
   }),
 
@@ -319,6 +497,13 @@ export const SUPPLEMENTS: Draft[] = [
     primaryMuscles: ["lats"],
     secondaryMuscles: ["biceps"],
     cues: ["Anchor the band high and kneel", "Drive the elbows down to the ribs"],
+    steps: [
+      "Anchor the band high, over a door or a bar, and kneel underneath it.",
+      "Take a handle in each hand with the arms fully long overhead.",
+      "Sit tall and brace so your lower back does not arch.",
+      "Drive the elbows down toward your ribs, pulling the hands to shoulder height.",
+      "Let the band lift the arms back up slowly, keeping tension throughout.",
+    ],
     defaults: reps(3, 14, 60),
   }),
   ex("Dead_Hang", "Dead Hang", {
@@ -331,6 +516,13 @@ export const SUPPLEMENTS: Draft[] = [
     chainId: "vpull-bw",
     chainRank: 1,
     cues: ["Shoulders active, not hanging slack", "Breathe; relax everything below the ribs"],
+    steps: [
+      "Reach up and take an overhand grip on the bar, hands about shoulder width apart.",
+      "Step or hop off and let your body hang with your arms long.",
+      "Pull your shoulders down away from your ears so you are not hanging slack.",
+      "Keep your legs together and let everything below the ribs relax.",
+      "Breathe steadily for the full hold, then step down under control.",
+    ],
     defaults: time(3, 25, 60),
   }),
   ex("Negative_Pull-Up", "Negative Pull-Up", {
@@ -343,6 +535,13 @@ export const SUPPLEMENTS: Draft[] = [
     chainId: "vpull-bw",
     chainRank: 2,
     cues: ["Jump to the top, then lower slowly", "Aim for a five second descent"],
+    steps: [
+      "Set a box or step under the bar so you can reach the top position.",
+      "Jump or step up until your chin is over the bar and your chest is close to it.",
+      "Take your feet off the support and hold the top for a beat.",
+      "Lower yourself as slowly as you can, aiming for about five seconds.",
+      "Reach a full hang, then step back up for the next rep rather than dropping.",
+    ],
     defaults: reps(3, 5, 90),
   }),
 
@@ -356,7 +555,14 @@ export const SUPPLEMENTS: Draft[] = [
     unilateral: true,
     spaceNeeded: "normal",
     cues: ["One weight only, stay perfectly upright", "Resist the lean; that is the whole exercise"],
-    defaults: time(2, 30, 45),
+    steps: [
+      "Set one weight on the floor beside you.",
+      "Hinge down, take the handle, and stand up with a flat back.",
+      "Stand perfectly upright with the shoulders level, resisting the pull to one side.",
+      "Brace your midsection and walk with short, quick steps.",
+      "Keep the free arm relaxed at your side; do not use it as a counterweight.",
+    ],
+    defaults: time(2, 60, 45),
   }),
 
   /* ---------------- core ---------------- */
@@ -367,6 +573,13 @@ export const SUPPLEMENTS: Draft[] = [
     secondaryMuscles: ["lower-back", "glutes"],
     unilateral: true,
     cues: ["Reach opposite arm and leg long", "Keep the hips square to the floor"],
+    steps: [
+      "Start on your hands and knees with the hands under the shoulders and knees under the hips.",
+      "Brace your midsection so the lower back stays flat, not arched.",
+      "Reach one arm forward and the opposite leg back until both are long.",
+      "Keep your hips square to the floor and your neck in line with your spine.",
+      "Hold, breathing steadily, then switch to the other pair.",
+    ],
     defaults: time(2, 40, 30),
   }),
   ex("Hollow_Hold", "Hollow Hold", {
@@ -376,6 +589,13 @@ export const SUPPLEMENTS: Draft[] = [
     level: "intermediate",
     contraindications: ["lower-back", "neck"],
     cues: ["Press the lower back into the floor", "Lower the legs only as far as that holds"],
+    steps: [
+      "Lie on your back with your arms overhead and your legs straight.",
+      "Press your lower back firmly into the floor and keep it there.",
+      "Lift your shoulders and legs a few inches off the floor.",
+      "Lower the legs only as far as you can keep the lower back pressed down.",
+      "Breathe shallowly and steadily; bend the knees if the back lifts.",
+    ],
     defaults: time(3, 30, 45),
   }),
 
@@ -388,7 +608,14 @@ export const SUPPLEMENTS: Draft[] = [
     mechanic: null,
     unilateral: true,
     cues: ["Hold something solid for balance", "Swing only as high as stays relaxed"],
-    defaults: time(1, 30, 0),
+    steps: [
+      "Stand side-on to a wall or post and hold it for balance.",
+      "Stand tall on the supporting leg with a soft knee.",
+      "Swing the free leg forward and back in a relaxed arc.",
+      "Let the range grow gradually rather than forcing the first swing high.",
+      "Keep your torso upright and still; only the leg moves.",
+    ],
+    defaults: time(1, 40, 20),
   }),
   ex("Cat_Cow", "Cat Cow", {
     pattern: "mobility",
@@ -397,7 +624,14 @@ export const SUPPLEMENTS: Draft[] = [
     secondaryMuscles: ["abdominals"],
     mechanic: null,
     cues: ["Move one vertebra at a time", "Let the breath set the pace"],
-    defaults: time(1, 40, 0),
+    steps: [
+      "Start on your hands and knees, hands under the shoulders, knees under the hips.",
+      "Breathe out and round your back one vertebra at a time, tucking the tailbone.",
+      "Let your head drop naturally at the end of the round.",
+      "Breathe in and reverse it, arching from the tailbone up to the neck.",
+      "Let the breath set the pace rather than rushing the shape.",
+    ],
+    defaults: time(1, 40, 20),
   }),
   ex("Hip_Circles", "Hip Circles", {
     pattern: "mobility",
@@ -405,7 +639,14 @@ export const SUPPLEMENTS: Draft[] = [
     primaryMuscles: ["glutes"],
     mechanic: null,
     cues: ["Hands on hips, feet planted wide", "Draw the biggest circle you can"],
-    defaults: time(1, 30, 0),
+    steps: [
+      "Stand with your feet a little wider than your shoulders and your hands on your hips.",
+      "Keep your feet planted and your chest facing forward.",
+      "Push the hips out to one side and start circling them.",
+      "Draw the biggest circle you can without moving the feet or the shoulders.",
+      "Do half the time in one direction, then reverse.",
+    ],
+    defaults: time(1, 30, 20),
   }),
   ex("Shoulder_Rolls", "Shoulder Rolls", {
     pattern: "mobility",
@@ -414,7 +655,14 @@ export const SUPPLEMENTS: Draft[] = [
     secondaryMuscles: ["traps"],
     mechanic: null,
     cues: ["Big, slow circles backwards", "Let the arms stay heavy"],
-    defaults: time(1, 25, 0),
+    steps: [
+      "Stand tall with your arms hanging heavy at your sides.",
+      "Lift both shoulders up toward your ears.",
+      "Roll them back and squeeze the shoulder blades together.",
+      "Let them drop down and forward to complete a big, slow circle.",
+      "Do half the time rolling backwards, then reverse the direction.",
+    ],
+    defaults: time(1, 25, 20),
   }),
   ex("Torso_Twist", "Standing Torso Twist", {
     pattern: "mobility",
@@ -424,6 +672,13 @@ export const SUPPLEMENTS: Draft[] = [
     mechanic: null,
     contraindications: ["lower-back"],
     cues: ["Turn from the ribs, hips facing forward", "Let the arms swing loosely"],
-    defaults: time(1, 30, 0),
+    steps: [
+      "Stand with your feet shoulder width apart and your knees soft.",
+      "Let your arms hang loose or fold them across your chest.",
+      "Keep your hips and feet facing forward.",
+      "Turn from the ribs to one side, letting the arms swing with you.",
+      "Come back through the middle and turn to the other side in a steady rhythm.",
+    ],
+    defaults: time(1, 30, 20),
   }),
 ];

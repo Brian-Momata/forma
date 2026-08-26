@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Archivo, Instrument_Sans } from "next/font/google";
+import { AudioUnlock } from "@/components/audio-unlock";
 import { ServiceWorkerRegistrar } from "@/components/service-worker";
 import { ThemeSync } from "@/components/theme-sync";
 import "./globals.css";
@@ -50,6 +51,7 @@ export default function RootLayout({
       <body>
         <ThemeSync />
         <ServiceWorkerRegistrar />
+        <AudioUnlock />
         {children}
       </body>
     </html>

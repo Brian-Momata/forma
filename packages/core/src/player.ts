@@ -3,7 +3,7 @@ import { assertNever, type ExerciseId, type SetRecord } from "./types.ts";
 /**
  * The workout state machine, ported from the interaction in the design.
  *
- *   ready -> set -> (rest | transition) -> ... -> complete
+ *   ready -> set -> (switch) -> (rest | transition) -> ... -> complete
  *
  * Pure, and the clock is injected: every function takes `now`. Nothing here
  * calls Date.now or setInterval. That is what makes the timer testable without
@@ -14,10 +14,49 @@ import { assertNever, type ExerciseId, type SetRecord } from "./types.ts";
  */
 
 export const READY_SEC = 3;
+
+/**
+ * The floor on the changeover between two movements.
+ *
+ * A changeover is not dead time -- it is walking to the next station and
+ * setting up -- so it is at least this long, and longer when the movement you
+ * just finished prescribed a real rest. Capped, because a 90s prescribed rest
+ * belongs *between sets*; making people stand still for 90s before the next
+ * exercise would inflate every session well past its budget.
+ */
 export const TRANSITION_SEC = 6;
+export const MAX_TRANSITION_SEC = 30;
+
+/** Long enough to get off one side and set up on the other. */
+export const SWITCH_SEC = 5;
+
+/**
+ * Below this, halving a timed set leaves too little per side to be worth
+ * doing, so the set runs as one piece and the screen just says "each side".
+ */
+export const MIN_SIDE_SPLIT_SEC = 16;
+
 export const CHIME_MS = 1300;
 
-export type Phase = "ready" | "set" | "rest" | "transition" | "complete";
+export type Phase = "ready" | "set" | "switch" | "rest" | "transition" | "complete";
+
+/** Which side of the body the current set is working, or null when it is both. */
+export type Side = "left" | "right" | null;
+
+/**
+ * Why the player just sounded.
+ *
+ * Derived here rather than guessed from the phase it landed in: "set ended"
+ * and "exercise ended" both arrive at a screen that is not the set screen, and
+ * they are not the same event to anyone listening for them.
+ */
+export type ChimeKind =
+  | "set-end"
+  | "rest-end"
+  | "exercise-end"
+  | "switch"
+  | "next"
+  | "finish";
 
 /**
  * A plan item flattened for playback. The player never touches the library --
@@ -33,7 +72,19 @@ export interface PlayerItem {
   restSec: number;
   warmup: boolean;
   cues: readonly string[];
+  /** The full how-to, in order. Empty for entries the source never described. */
+  steps: readonly string[];
   images: readonly string[];
+  /**
+   * One side at a time, rather than both at once.
+   *
+   * A timed set of one of these runs each side in turn with a switch in
+   * between, so the clock cannot run out on the left leg and move the session
+   * on before the right one has been trained. Alternating movements -- walking
+   * lunges, marches -- are not unilateral in this sense: they work both sides
+   * within the set already.
+   */
+  unilateral: boolean;
   /** Whether this movement takes external load, so the screen offers a weight. */
   loadable: boolean;
   /** What the plan asks for, in kilograms. Null until someone has logged one. */
@@ -45,6 +96,9 @@ export interface PlayerState {
   exIndex: number;
   setIndex: number;
   phase: Phase;
+
+  /** Which side is being worked, for unilateral movements. Null for the rest. */
+  side: Side;
 
   /** Wall-clock start of the current phase. All elapsed time derives from this. */
   phaseStartedAt: number;
@@ -70,6 +124,8 @@ export interface PlayerState {
   records: readonly SetRecord[];
   /** When the end-of-phase tone last fired, for the chime animation. */
   chimeAt: number | null;
+  /** What that tone was for. Absent on sessions checkpointed before this existed. */
+  chimeKind: ChimeKind | null;
   autoAdvance: boolean;
 }
 
@@ -77,6 +133,22 @@ export interface StartOptions {
   autoAdvance?: boolean;
   /** Overrides every prescribed rest, from the user's settings. */
   restOverrideSec?: number | null;
+}
+
+/** The side a set of this item opens on: the left, or neither. */
+function openingSide(item: PlayerItem | undefined): Side {
+  return item?.unilateral ? "left" : null;
+}
+
+/**
+ * Whether a set of this item is run one side at a time on the clock.
+ *
+ * Only timed sets: a rep set ends when the person says it does, so there is no
+ * clock to run out on them, and the screen tells them the reps are per side.
+ */
+export function splitsSides(item: PlayerItem | undefined): boolean {
+  if (!item || !item.unilateral || item.kind !== "time") return false;
+  return (item.durationSec ?? 0) >= MIN_SIDE_SPLIT_SEC;
 }
 
 export function start(
@@ -94,6 +166,7 @@ export function start(
     exIndex: 0,
     setIndex: 0,
     phase: resolved.length === 0 ? "complete" : "ready",
+    side: openingSide(resolved[0]),
     phaseStartedAt: now,
     pausedMs: 0,
     pausedAt: null,
@@ -103,6 +176,7 @@ export function start(
     endedAt: resolved.length === 0 ? now : null,
     records: [],
     chimeAt: null,
+    chimeKind: null,
     autoAdvance: options.autoAdvance ?? true,
   };
 }
@@ -113,6 +187,25 @@ export function currentItem(state: PlayerState): PlayerItem | undefined {
 
 export function nextItem(state: PlayerState): PlayerItem | undefined {
   return state.items[state.exIndex + 1];
+}
+
+/** How long one side of the current set runs, or the whole set when it is not split. */
+export function setSeconds(item: PlayerItem | undefined): number {
+  if (!item || item.kind !== "time") return 0;
+  const total = item.durationSec ?? 0;
+  return splitsSides(item) ? Math.round(total / 2) : total;
+}
+
+/**
+ * The changeover to the next movement.
+ *
+ * Long enough to actually walk over and set up, and longer for a movement that
+ * prescribed a real rest -- a warm-up drill needs a breath before the next one
+ * just as much as a heavy set does, which is what "no rest" used to deny it.
+ */
+export function transitionSeconds(item: PlayerItem | undefined): number {
+  const rest = item?.restSec ?? 0;
+  return Math.min(MAX_TRANSITION_SEC, Math.max(TRANSITION_SEC, rest));
 }
 
 /**
@@ -128,11 +221,13 @@ export function phaseDuration(state: PlayerState): number | null {
       return READY_SEC;
     case "set":
       if (!item) return null;
-      return item.kind === "time" ? (item.durationSec ?? 0) : null;
+      return item.kind === "time" ? setSeconds(item) : null;
+    case "switch":
+      return SWITCH_SEC;
     case "rest":
       return (item?.restSec ?? 0) + state.bonusRestSec;
     case "transition":
-      return state.autoAdvance ? TRANSITION_SEC : null;
+      return state.autoAdvance ? transitionSeconds(item) : null;
     case "complete":
       return null;
     default:
@@ -177,14 +272,26 @@ export function isChiming(state: PlayerState, now: number): boolean {
   return state.chimeAt !== null && now - state.chimeAt < CHIME_MS;
 }
 
-function enterPhase(state: PlayerState, phase: Phase, now: number): PlayerState {
+interface PhaseOptions {
+  side?: Side;
+  chime?: ChimeKind;
+}
+
+function enterPhase(
+  state: PlayerState,
+  phase: Phase,
+  now: number,
+  options: PhaseOptions = {}
+): PlayerState {
   return {
     ...state,
     phase,
+    side: options.side === undefined ? state.side : options.side,
     phaseStartedAt: now,
     pausedMs: 0,
     pausedAt: null,
     bonusRestSec: 0,
+    chimeKind: options.chime ?? state.chimeKind,
     endedAt: phase === "complete" ? now : state.endedAt,
   };
 }
@@ -206,11 +313,38 @@ function recordSet(state: PlayerState, now: number, skipped: boolean): SetRecord
   ];
 }
 
+/** Banks the set and moves to whatever comes after it. */
+function finishSet(state: PlayerState, now: number, skipped: boolean): PlayerState {
+  const item = currentItem(state);
+  if (!item) return state;
+
+  const records = recordSet(state, now, skipped);
+  const moreSets = state.setIndex + 1 < item.sets;
+  const moreExercises = state.exIndex + 1 < state.items.length;
+
+  if (moreSets) {
+    // A zero-second rest is a rest the person did not ask for.
+    return enterPhase(
+      { ...state, records, setIndex: state.setIndex + 1 },
+      item.restSec > 0 ? "rest" : "set",
+      now,
+      { side: openingSide(item), chime: "set-end" }
+    );
+  }
+  if (moreExercises) {
+    return enterPhase({ ...state, records }, "transition", now, { chime: "exercise-end" });
+  }
+  return enterPhase({ ...state, records }, "complete", now, { chime: "finish" });
+}
+
 /**
  * Moves to the next phase.
  *
  * `skipped` distinguishes a set the person chose to skip from one they
- * finished, so history stays truthful rather than flattering.
+ * finished, so history stays truthful rather than flattering. Skipping also
+ * abandons the whole set rather than only the side being worked: someone who
+ * taps skip on the left side is done with the movement, not asking to be sent
+ * to the right one.
  */
 export function advance(state: PlayerState, now: number, skipped = false): PlayerState {
   const item = currentItem(state);
@@ -218,30 +352,21 @@ export function advance(state: PlayerState, now: number, skipped = false): Playe
 
   switch (state.phase) {
     case "ready":
-      return enterPhase(state, "set", now);
+      return enterPhase(state, "set", now, { side: openingSide(item), chime: "rest-end" });
 
     case "set": {
-      const records = recordSet(state, now, skipped);
-      const moreSets = state.setIndex + 1 < item.sets;
-      const moreExercises = state.exIndex + 1 < state.items.length;
-
-      if (moreSets) {
-        // A zero-second rest is a rest the person did not ask for.
-        const next = enterPhase(
-          { ...state, records, setIndex: state.setIndex + 1 },
-          item.restSec > 0 ? "rest" : "set",
-          now
-        );
-        return next;
+      // Half the clock is the left side; the switch beat sends it to the right.
+      if (!skipped && splitsSides(item) && state.side === "left") {
+        return enterPhase(state, "switch", now, { chime: "switch" });
       }
-      if (moreExercises) {
-        return enterPhase({ ...state, records }, "transition", now);
-      }
-      return enterPhase({ ...state, records }, "complete", now);
+      return finishSet(state, now, skipped);
     }
 
+    case "switch":
+      return enterPhase(state, "set", now, { side: "right", chime: "rest-end" });
+
     case "rest":
-      return enterPhase(state, "set", now);
+      return enterPhase(state, "set", now, { side: openingSide(item), chime: "rest-end" });
 
     case "transition": {
       const next = state.exIndex + 1;
@@ -255,7 +380,8 @@ export function advance(state: PlayerState, now: number, skipped = false): Playe
           weightKg: state.items[next]?.targetWeightKg ?? null,
         },
         "ready",
-        now
+        now,
+        { side: openingSide(state.items[next]), chime: "next" }
       );
     }
 
@@ -339,4 +465,21 @@ export function sessionSeconds(state: PlayerState, now: number): number {
 export function formatClock(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/**
+ * How the dose reads on screen.
+ *
+ * "each side" is not decoration: a set of ten one-arm rows means ten each way,
+ * and someone who reads it as ten total trains half the movement.
+ */
+export function doseText(item: PlayerItem | undefined): string {
+  if (!item) return "";
+  const perSide = item.unilateral ? " each side" : "";
+  if (item.kind === "time") {
+    return splitsSides(item)
+      ? `${setSeconds(item)}s each side`
+      : `${item.durationSec}s${perSide}`;
+  }
+  return `${item.reps} reps${perSide}`;
 }

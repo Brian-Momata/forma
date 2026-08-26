@@ -268,7 +268,12 @@ export default function PlanPage() {
                 <div className="flex-1 text-[14px] text-t2">
                   {library.byId(item.exerciseId)?.name ?? "—"}
                 </div>
-                <div className="text-[12px] text-t4">{item.prescription.durationSec}s</div>
+                <div className="text-[12px] text-t4">
+                  {item.prescription.durationSec}s
+                  {library.byId(item.exerciseId)?.unilateral && (
+                    <span className="text-acc"> · both sides</span>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={() => void remove(item.i)}
@@ -354,6 +359,15 @@ export default function PlanPage() {
                   <div className="mt-[3px] text-[12px] text-t4">
                     {exercise.pattern.replace(/-/g, " ")} · tap to swap
                   </div>
+                  {/* Editing these blind is how a one-sided movement ends up
+                      prescribed at half or double what was meant. */}
+                  {exercise.unilateral && (
+                    <div className="mt-[3px] text-[12px] font-semibold text-acc">
+                      {exercise.kind === "reps"
+                        ? "One side at a time — reps are per side"
+                        : "One side at a time — the hold covers both"}
+                    </div>
+                  )}
                 </button>
                 <div className="flex shrink-0 flex-col gap-1">
                   <button
