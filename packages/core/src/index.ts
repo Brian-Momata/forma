@@ -4,3 +4,5 @@ export * from "./library/index.ts";
 export * from "./selection.ts";
 export * from "./archetypes.ts";
 export * from "./generator.ts";
+export * from "./player.ts";
+export * from "./progression.ts";
