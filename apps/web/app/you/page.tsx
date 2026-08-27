@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Goal, Limitation } from "@form/core";
 
+import { InstallSetting } from "@/components/install-prompt";
 import { Display, Kicker, PillButton, Screen, ScrollArea } from "@/components/ui";
 import { TabBar } from "@/components/ui/nav";
 import { ImportError, exportAll, importAll } from "@/db/repo";
@@ -263,6 +264,8 @@ export default function YouPage() {
             </Chip>
           ))}
         </div>
+
+        <InstallSetting />
 
         <Kicker className="px-[22px] pb-1 pt-8">Your data</Kicker>
         <p className="px-[22px] pb-3 text-[12px] leading-[1.5] text-t5">

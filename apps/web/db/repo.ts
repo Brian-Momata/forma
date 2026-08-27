@@ -16,6 +16,7 @@ import {
   type SetupId,
 } from "@form/core";
 
+import { isInstallNudge, type InstallNudge } from "@/lib/install";
 import { PROFILE_ID, SCHEMA_VERSION, db } from "./schema.ts";
 
 const now = () => Date.now();
@@ -383,6 +384,23 @@ export async function readCheckpoint<T>(): Promise<T | undefined> {
 
 export async function clearCheckpoint(): Promise<void> {
   await db.meta.delete("activeSession");
+}
+
+/* ----------------------------------------------------------- install prompt */
+
+/**
+ * What this device remembers about being asked to install the app.
+ *
+ * `meta` rather than the profile, so it stays out of the export bundle: it is a
+ * fact about this phone, not about the person (see `lib/install.ts`).
+ */
+export async function getInstallNudge(): Promise<InstallNudge | null> {
+  const row = await db.meta.get("installNudge");
+  return isInstallNudge(row?.value) ? row.value : null;
+}
+
+export async function saveInstallNudge(nudge: InstallNudge): Promise<void> {
+  await db.meta.put({ key: "installNudge", value: nudge });
 }
 
 /* ------------------------------------------------------------ export/import */
