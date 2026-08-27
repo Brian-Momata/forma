@@ -221,6 +221,31 @@ The canvas scaffolding files in the design project — `ios-frame.jsx`, `image-s
 `support.js` — are a mock device bezel, a drag-to-fill placeholder, and the template
 runtime. **None of it ships.**
 
+### Where the artboard and the app deliberately differ
+
+Three of them, all on `Welcome` and `Install prompt`. Each is written down because
+"it does not match the artboard" is otherwise indistinguishable from a mistake.
+
+- **The Welcome headline wraps to three lines, not the artboard's two.** `IOSDevice`
+  is 402px wide and the screen's gutter is 22px, so a line has 358px; "wherever you
+  are." at 46px `wdth` 106 wants 425. The break the artboard draws cannot happen at
+  the size it draws it at. We keep the size — it is the loudest thing on the screen —
+  and let `text-wrap: balance` place the breaks, which gives three even lines here and
+  the artboard's two as soon as the column is wide enough.
+- **"I already have an account" is "I already have a backup".** There are no accounts;
+  everything lives in this browser (§5). The one case that slot really covers is
+  someone arriving on a new phone with the JSON they exported from the old one, so it
+  restores through `importAll` — the same path as the You screen's Import.
+- **The install sheet's rows change per platform.** The artboard's two rows are
+  Safari's Share-menu steps, which are right for iOS (`addsByHand`) and meaningless on
+  Chromium, where we have a real prompt to fire. There the rows become what installing
+  gets you and the pill fires the prompt. An "Add to home screen" button that cannot
+  add anything is the one thing that sheet must not be.
+
+The hero photograph is still an empty `image-slot` on the canvas, so `WelcomeHero`
+draws the panel in the app's own language — the same call `MediaWell` makes for
+exercises that ship no images. The scrim over it is the design's, stop for stop.
+
 ---
 
 ## 8. Testing strategy

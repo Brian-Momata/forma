@@ -38,8 +38,10 @@ export default function TodayPage() {
   const { profile, sessions, activeSetup, activePlan, library } = useApp();
 
   // No profile means nobody has been through onboarding on this device yet.
+  // They go to Welcome, not to question one: onboarding asks what someone is
+  // training for before saying what the app will do with the answer.
   useEffect(() => {
-    if (ready && !profile) router.replace("/onboarding");
+    if (ready && !profile) router.replace("/welcome");
   }, [ready, profile, router]);
 
   const plan = activePlan;

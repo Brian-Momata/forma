@@ -11,13 +11,14 @@
  */
 // Bumped whenever the caching strategy changes, so stale entries are dropped
 // on activate rather than served forever.
-const VERSION = "form-v2";
+const VERSION = "form-v3";
 const SHELL = `${VERSION}-shell`;
 const ASSETS = `${VERSION}-assets`;
 const IMAGES = `${VERSION}-images`;
 
 const SHELL_URLS = [
   "/",
+  "/welcome",
   "/plans",
   "/plans/new",
   "/progress",

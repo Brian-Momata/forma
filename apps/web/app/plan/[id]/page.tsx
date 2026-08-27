@@ -307,7 +307,7 @@ export default function PlanPage() {
               <div key={item.i} className="border-t border-hair-07 px-[22px] py-[18px]">
                 <div className="flex items-center gap-4">
                   <div className="min-w-0 flex-1">
-                    <div className="text-[15px] font-semibold text-[#FFB020]">
+                    <div className="text-[15px] font-semibold text-warn">
                       This movement is no longer in the library
                     </div>
                     <div className="mt-[3px] text-[12px] text-t4">
