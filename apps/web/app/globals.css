@@ -29,6 +29,10 @@
 
   /* text ramp, brightest to dimmest */
   --color-t1: #f2f4f1;
+  /* Half a step under t1: the design's numbered list rows on Welcome and the
+     install sheet, which must read as body text without competing with the
+     display heading directly above them. */
+  --color-t2-bright: #d6dae0;
   --color-t2: #b7bcc4;
   --color-t3: #8a8f98;
   --color-t4: #6d727b;
@@ -44,6 +48,10 @@
   --color-r1: #c4c0e8;
   --color-r2: #9a96c4;
   --color-r3: #7b76a8;
+
+  /* caution — a thing the app cannot do, or did not accept. The design's fourth
+     accent option, used here as a status colour and never as the theme. */
+  --color-warn: #ffb020;
 
   /* hairlines */
   --color-hair-06: rgb(255 255 255 / 0.06);

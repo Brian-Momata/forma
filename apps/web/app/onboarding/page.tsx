@@ -87,6 +87,16 @@ function OnboardingFlow() {
 
   const canContinue = step.multi || picked.length > 0;
 
+  /**
+   * Back out of question one rather than dead-ending on it. The artboard has no
+   * disabled Back either: on a first run it returns to Welcome, and a re-run
+   * started from the You screen goes back where it came from.
+   */
+  const back = () => {
+    if (index > 0) return setIndex((i) => i - 1);
+    router.replace(rerun ? "/you" : "/welcome");
+  };
+
   const finish = async () => {
     setBusy(true);
     try {
@@ -239,9 +249,8 @@ function OnboardingFlow() {
       >
         <button
           type="button"
-          onClick={() => setIndex((i) => Math.max(0, i - 1))}
-          disabled={index === 0}
-          className="text-[13px] font-semibold tracking-[.02em] text-t4 transition-colors hover:text-t1 disabled:opacity-30"
+          onClick={back}
+          className="text-[13px] font-semibold tracking-[.02em] text-t4 transition-colors hover:text-t1"
         >
           Back
         </button>

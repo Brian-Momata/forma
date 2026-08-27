@@ -199,7 +199,7 @@ export function ExerciseSheet({ library, setup, profile, current, onPick, onClos
                         : " · bodyweight"}
                     </div>
                     {flags.length > 0 && (
-                      <div className="mt-[5px] text-[11px] font-semibold uppercase tracking-[.08em] text-[#FFB020]">
+                      <div className="mt-[5px] text-[11px] font-semibold uppercase tracking-[.08em] text-warn">
                         {flags.join(" · ")}
                       </div>
                     )}

@@ -20,6 +20,7 @@ const DISPLAY = {
   done: { fontSize: 92, letterSpacing: "-.065em", lineHeight: 0.86, wdth: 110 },
   date: { fontSize: 62, letterSpacing: "-.055em", lineHeight: 0.9, wdth: 118 },
   next: { fontSize: 52, letterSpacing: "-.05em", lineHeight: 0.94, wdth: 104 },
+  welcome: { fontSize: 46, letterSpacing: "-.05em", lineHeight: 0.95, wdth: 106 },
   hero: { fontSize: 40, letterSpacing: "-.045em", lineHeight: 0.98, wdth: 108 },
   title: { fontSize: 36, letterSpacing: "-.04em", lineHeight: 1, wdth: 108 },
   step: { fontSize: 34, letterSpacing: "-.035em", lineHeight: 1.05, wdth: 108 },
@@ -144,6 +145,51 @@ export function PillButton({
     >
       {children}
     </button>
+  );
+}
+
+/* --------------------------------------------------------------- list rows */
+
+/**
+ * The design's numbered rows -- accent numeral, hairline between, one line of
+ * copy. It appears twice on the artboard, on Welcome and inside the install
+ * sheet, with identical treatment, so it lives here rather than in either.
+ *
+ * An ordered list rather than divs: the numerals are decoration over real
+ * sequence, and `01 02 03` read aloud between every label is noise.
+ */
+export function NumberedRows({
+  items,
+  className = "",
+}: {
+  items: readonly ReactNode[];
+  className?: string;
+}) {
+  return (
+    <ol className={`border-t border-hair-09 ${className}`}>
+      {items.map((label, i) => (
+        <li
+          key={i}
+          className="flex items-center gap-3 border-b border-hair-07 py-[13px]"
+        >
+          <span
+            aria-hidden
+            className="w-5 shrink-0 text-acc"
+            style={{
+              fontFamily: "var(--font-display)",
+              fontVariationSettings: '"wdth" 112',
+              fontSize: 12,
+              fontWeight: 800,
+            }}
+          >
+            {String(i + 1).padStart(2, "0")}
+          </span>
+          <span className="flex-1 text-[14px] font-medium leading-[1.45] tracking-[-.005em] text-t2-bright">
+            {label}
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
