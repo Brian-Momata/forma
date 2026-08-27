@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { InstallPrompt } from "@/components/install-prompt";
 import { Display, Kicker, Loading, PillButton, Screen, ScrollArea } from "@/components/ui";
 import { MediaWell } from "@/components/ui/media";
 import { TabBar } from "@/components/ui/nav";
@@ -188,6 +189,8 @@ export default function TodayPage() {
                 Edit
               </Link>
             </div>
+
+            <InstallPrompt />
 
             {upcoming.length > 0 && (
               <>
