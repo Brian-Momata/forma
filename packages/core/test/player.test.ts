@@ -439,6 +439,30 @@ describe("logging what was on the bar", () => {
     expect(start([loaded("Squat", 3, null)], 0).weightKg).toBeNull();
   });
 
+  /**
+   * Re-entering the same number every week is how people stop entering it, and
+   * a load nobody records is a load the plan can never progress.
+   */
+  it("falls back to what was last lifted when the plan has no target", () => {
+    const item = { ...loaded("Squat", 3, null), lastWeightKg: 22.5 };
+    expect(start([item], 0).weightKg).toBe(22.5);
+    // The plan still outranks history: it is the thing being prescribed.
+    expect(start([{ ...item, targetWeightKg: 30 }], 0).weightKg).toBe(30);
+  });
+
+  it("carries the fallback into the next movement too", () => {
+    let state = start(
+      [loaded("Squat", 1, null), { ...loaded("Press", 1, null), lastWeightKg: 14 }],
+      0
+    );
+    state = advance(state, 1000); // ready -> set
+    state = completeSet(state, 2000); // -> transition
+    state = advance(state, 3000); // transition -> ready on the next movement
+
+    expect(state.exIndex).toBe(1);
+    expect(state.weightKg).toBe(14);
+  });
+
   it("writes the weight onto every set of that exercise", () => {
     let state = start([loaded("Squat", 2, 60)], 0);
     state = advance(state, 1000); // ready -> set

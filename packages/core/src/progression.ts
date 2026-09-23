@@ -74,6 +74,28 @@ function easier(item: PlanExercise): PlanExercise {
  */
 export type LoggedWeights = ReadonlyMap<ExerciseId | string, number>;
 
+/**
+ * Writes what was actually lifted back onto the prescription.
+ *
+ * Every finished session, whatever it felt like and whatever the tier: the
+ * weight someone dialled in is the answer to "what do I put on the bar", and
+ * leaving it in the session record meant the next session asked again from
+ * blank. Load progression used to be the only thing that ever wrote this
+ * field, so on a dumbbell plan -- which progresses by reps, not load -- a
+ * weight typed in every week was never once remembered.
+ *
+ * The logged weight wins over the stored target: if the plan said 20 and the
+ * person did 17.5, 17.5 is where they are.
+ */
+function remember(item: PlanExercise, logged: LoggedWeights): PlanExercise {
+  const kg = logged.get(item.exerciseId);
+  if (kg === undefined || kg <= 0 || kg === item.prescription.targetWeightKg) return item;
+  return {
+    ...item,
+    prescription: { ...item.prescription, targetWeightKg: Math.min(MAX_WEIGHT_KG, kg) },
+  };
+}
+
 export function applyFeedback(
   library: Library,
   plan: Plan,
@@ -86,9 +108,10 @@ export function applyFeedback(
 
   const days = plan.days.map((day) => ({
     ...day,
-    exercises: day.exercises.map((item): PlanExercise => {
+    exercises: day.exercises.map((entry): PlanExercise => {
       // Warm-ups are not a training stimulus; they never progress.
-      if (item.warmup) return item;
+      if (entry.warmup) return entry;
+      const item = remember(entry, logged);
       const exercise = library.byId(item.exerciseId);
 
       switch (feel) {
@@ -135,8 +158,7 @@ export function applyFeedback(
             // Where there is a bar to load, load it: keep the reps and move the
             // weight, which is what the Complete screen promises and what the
             // tier exists to express.
-            const known =
-              item.prescription.targetWeightKg ?? logged.get(item.exerciseId) ?? null;
+            const known = item.prescription.targetWeightKg ?? null;
             if (known !== null) {
               return {
                 ...item,

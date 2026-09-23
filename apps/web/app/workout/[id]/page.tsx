@@ -6,7 +6,7 @@ import type { PlanId } from "@form/core";
 
 import { Loading, NotFound, PillButton, Screen } from "@/components/ui";
 import { primeAudio } from "@/lib/audio";
-import { resolveDay } from "@/lib/plan";
+import { lastLoggedWeights, resolveDay } from "@/lib/plan";
 import { useBootstrap } from "@/lib/use-bootstrap";
 import { useSessionEngine } from "@/lib/use-session-engine";
 import { newSession, readCheckpoint, saveSession } from "@/db/repo";
@@ -77,7 +77,10 @@ function WorkoutScreen() {
       const session = newSession(plan.id, plan.setupId, dayIndex, day.name);
       await saveSession(session);
 
-      const { items } = resolveDay(library, day);
+      // Read at start rather than subscribed to: what someone lifted in past
+      // sessions is what the weight control opens on, and re-reading it as the
+      // store changes would restart the session.
+      const { items } = resolveDay(library, day, lastLoggedWeights(useApp.getState().sessions));
       begin(
         items,
         {

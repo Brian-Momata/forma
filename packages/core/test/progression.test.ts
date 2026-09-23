@@ -160,6 +160,42 @@ describe("how you get stronger depends on the situation", () => {
       }
     });
 
+    /**
+     * The bug this guards: load progression was the only thing that ever wrote
+     * `targetWeightKg`, so a dumbbell plan -- which progresses by reps -- threw
+     * away the weight someone dialled in, every session, forever.
+     */
+    it("remembers the weight on a tier that does not progress by load", () => {
+      const { plan, ctx } = build(["dumbbells", "bench"]);
+      expect(plan.tier).toBe("dumbbell");
+      const first = working(plan)[0]!;
+      const logged = new Map([[first.exerciseId, 17.5]]);
+
+      for (const feel of ["too-easy", "just-right", "too-hard"] as Feel[]) {
+        const after = working(applyFeedback(library, plan, feel, ctx, 1, logged))[0]!;
+        expect(after.prescription.targetWeightKg).toBe(17.5);
+      }
+    });
+
+    it("follows the weight down when the person lifts lighter than the plan asked", () => {
+      const { plan, ctx } = build(["dumbbells", "bench"]);
+      const first = working(plan)[0]!;
+      const seeded: Plan = {
+        ...plan,
+        days: plan.days.map((d) => ({
+          ...d,
+          exercises: d.exercises.map((e) =>
+            e.warmup ? e : { ...e, prescription: { ...e.prescription, targetWeightKg: 20 } }
+          ),
+        })),
+      };
+
+      const logged = new Map([[first.exerciseId, 15]]);
+      const after = working(applyFeedback(library, seeded, "just-right", ctx, 1, logged))[0]!;
+      // Where they actually are, not where the plan hoped they would be.
+      expect(after.prescription.targetWeightKg).toBe(15);
+    });
+
     it("adds reps instead when nothing has been logged, and says so", () => {
       const { plan, ctx } = build(["barbell", "rack", "bench"]);
       const next = applyFeedback(library, plan, "too-easy", ctx, 1);

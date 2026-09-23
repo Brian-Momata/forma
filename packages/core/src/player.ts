@@ -89,6 +89,15 @@ export interface PlayerItem {
   loadable: boolean;
   /** What the plan asks for, in kilograms. Null until someone has logged one. */
   targetWeightKg: number | null;
+  /**
+   * What was last logged for this movement, in kilograms.
+   *
+   * The fallback when the plan has no target: rebuilding a plan -- new kit, a
+   * new limitation -- drops its targets, and nobody wants to be asked what
+   * they curl from scratch because they bought a bench. Optional because
+   * sessions checkpointed before it existed carry items without it.
+   */
+  lastWeightKg?: number | null;
 }
 
 export interface PlayerState {
@@ -141,6 +150,18 @@ function openingSide(item: PlayerItem | undefined): Side {
 }
 
 /**
+ * What the weight control starts on for a movement.
+ *
+ * The plan's target first, then whatever was last lifted: starting from blank
+ * every session means re-entering the same number every session, and a number
+ * nobody enters is a plan that can never progress the load.
+ */
+function openingWeight(item: PlayerItem | undefined): number | null {
+  if (!item) return null;
+  return item.targetWeightKg ?? item.lastWeightKg ?? null;
+}
+
+/**
  * Whether a set of this item is run one side at a time on the clock.
  *
  * Only timed sets: a rep set ends when the person says it does, so there is no
@@ -171,7 +192,7 @@ export function start(
     pausedMs: 0,
     pausedAt: null,
     bonusRestSec: 0,
-    weightKg: resolved[0]?.targetWeightKg ?? null,
+    weightKg: openingWeight(resolved[0]),
     startedAt: now,
     endedAt: resolved.length === 0 ? now : null,
     records: [],
@@ -377,7 +398,7 @@ export function advance(state: PlayerState, now: number, skipped = false): Playe
           setIndex: 0,
           // A new movement means a new load, so the previous exercise's weight
           // must not follow it across.
-          weightKg: state.items[next]?.targetWeightKg ?? null,
+          weightKg: openingWeight(state.items[next]),
         },
         "ready",
         now,
