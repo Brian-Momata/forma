@@ -28,7 +28,8 @@ const LOADABLE: ReadonlySet<string> = new Set([
  */
 export function resolveDay(
   library: Library,
-  day: PlanDay
+  day: PlanDay,
+  lastWeights: ReadonlyMap<string, number> = new Map()
 ): { items: PlayerItem[]; unresolved: string[] } {
   const items: PlayerItem[] = [];
   const unresolved: string[] = [];
@@ -54,10 +55,41 @@ export function resolveDay(
       unilateral: exercise.unilateral,
       loadable: !item.warmup && exercise.requires.some((r) => LOADABLE.has(r)),
       targetWeightKg: item.prescription.targetWeightKg ?? null,
+      lastWeightKg: lastWeights.get(exercise.id) ?? null,
     });
   }
 
   return { items, unresolved };
+}
+
+/**
+ * The weight most recently logged for each movement.
+ *
+ * History, not prescription: a plan rebuilt for new equipment loses its target
+ * weights, and someone who has been pressing 12kg every week for a month
+ * should not be asked what they press as though they had never trained. Newest
+ * session wins, so this follows the person rather than averaging their past.
+ *
+ * Sessions are expected newest-first, as the database returns them.
+ */
+export function lastLoggedWeights(sessions: readonly Session[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const session of sessions) {
+    // Heaviest working set of that session, matching what the Complete screen
+    // banks -- but only from the first session that has one, so a deload is
+    // followed rather than overruled by a heavier month-old number.
+    const inSession = new Map<string, number>();
+    for (const record of session.sets) {
+      if (record.skipped || record.weightKg === null || record.weightKg <= 0) continue;
+      if (out.has(record.exerciseId)) continue;
+      const seen = inSession.get(record.exerciseId);
+      if (seen === undefined || record.weightKg > seen) {
+        inSession.set(record.exerciseId, record.weightKg);
+      }
+    }
+    for (const [id, kg] of inSession) out.set(id, kg);
+  }
+  return out;
 }
 
 /** Whether every movement in a day can still be resolved to a real exercise. */

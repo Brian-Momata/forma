@@ -159,10 +159,13 @@ function OnboardingFlow() {
 
   return (
     <Screen>
-      <div className="px-[22px] pt-[60px]">
+      {/* The question can give up its padding, and in landscape its subtitle:
+          a step whose options are a 40px slit under a full-height heading is a
+          step nobody can answer. */}
+      <div className="shrink-0 px-[22px] pt-[60px] short:pt-[22px]">
         <Segments total={steps.length} filled={index + 1} />
 
-        <div className="mt-[26px] flex items-baseline gap-[10px]">
+        <div className="mt-[26px] flex items-baseline gap-[10px] short:mt-[14px]">
           <div
             className="text-acc"
             style={{
@@ -181,7 +184,13 @@ function OnboardingFlow() {
         <Display size="step" className="mt-3">
           {step.title}
         </Display>
-        <p className="mt-[10px] pb-[22px] text-[14px] leading-[1.5] text-t3">{step.sub}</p>
+        {/* `sr-only`, not `hidden`: this sentence is instruction, not ornament
+            -- what the step means and what happens if you pick nothing -- so
+            landscape gives up the space it takes, not the words themselves. */}
+        <p className="mt-[10px] pb-[22px] text-[14px] leading-[1.5] text-t3 tiny:sr-only">
+          {step.sub}
+        </p>
+        <div className="hidden pb-[14px] tiny:block" />
       </div>
 
       <ScrollArea className="border-t border-hair-08">

@@ -223,7 +223,8 @@ runtime. **None of it ships.**
 
 ### Where the artboard and the app deliberately differ
 
-Three of them, all on `Welcome` and `Install prompt`. Each is written down because
+Four of them: three on `Welcome` and `Install prompt`, and one across every screen
+that the artboard draws bigger than the phone running it. Each is written down because
 "it does not match the artboard" is otherwise indistinguishable from a mistake.
 
 - **The Welcome headline wraps to three lines, not the artboard's two.** `IOSDevice`
@@ -241,6 +242,17 @@ Three of them, all on `Welcome` and `Install prompt`. Each is written down becau
   Chromium, where we have a real prompt to fire. There the rows become what installing
   gets you and the pill fires the prompt. An "Add to home screen" button that cannot
   add anything is the one thing that sheet must not be.
+- **The player's numerals shrink on a screen smaller than the artboard.** The design
+  sizes them in fixed px -- the rest clock at 158px -- and at 402pt "1:20" wants 378px
+  inside a 358px column, so the artboard's own width cannot draw the screen it draws.
+  The fixed heights had the same problem downwards: on a 667pt-tall phone the set
+  screen's weight stepper was half cut off and its buttons were below the fold of a
+  screen that cannot scroll. `Display`'s `fit` prop caps each numeral at the design's
+  size and shrinks it where the room is not there, the demo well gives ground first
+  (`min(272px, 34vh)`), `short:` trims padding under 700pt of height, and `tiny:` --
+  560pt, which means a landscape turn rather than a small phone -- drops the copy that
+  is encouragement rather than instruction. At the artboard's own size nothing changes
+  but the clock, which loses 5px so that all four digits exist.
 
 The hero photograph is still an empty `image-slot` on the canvas, so `WelcomeHero`
 draws the panel in the app's own language — the same call `MediaWell` makes for

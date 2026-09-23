@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 import { createLibrary, Exercise, type Library, type PlanDay, type Session } from "@form/core";
 import raw from "../../../packages/core/src/library/exercises.json" with { type: "json" };
 
-import { resolveDay, streakDays, summarise, upcomingDays, weekProgress } from "./plan";
+import {
+  lastLoggedWeights,
+  resolveDay,
+  streakDays,
+  summarise,
+  upcomingDays,
+  weekProgress,
+} from "./plan";
 
 const library: Library = createLibrary((raw as unknown[]).map((r) => Exercise.parse(r)));
 
@@ -113,5 +120,49 @@ describe("counting days", () => {
     // 2026-03-11 is a Wednesday.
     const week = weekProgress([session(at(2026, 3, 11))], at(2026, 3, 13));
     expect(week).toEqual([false, false, true, false, false, false, false]);
+  });
+});
+
+/**
+ * A weight typed in once is a weight the app should still know next week. It
+ * used to live only in the session record, so the stepper opened on blank every
+ * time and load progression had nothing to progress.
+ */
+describe("remembering what was lifted", () => {
+  const set = (exerciseId: string, weightKg: number | null, skipped = false) =>
+    ({ exerciseId, setIndex: 0, reps: 10, durationSec: null, weightKg, skipped, completedAt: 1 }) as
+      unknown as Session["sets"][number];
+
+  const withSets = (startedAt: number, sets: Session["sets"]): Session => ({
+    ...session(startedAt),
+    sets,
+  });
+
+  it("takes the heaviest working set of the most recent session that has one", () => {
+    // Newest first, as the database returns them.
+    const sessions = [
+      withSets(3000, [set("Squat", 40), set("Squat", 45)]),
+      withSets(2000, [set("Squat", 100), set("Press", 20)]),
+    ];
+
+    const last = lastLoggedWeights(sessions);
+    // A deload is followed, not overruled by a heavier older session.
+    expect(last.get("Squat")).toBe(45);
+    // A movement absent from the newest session still comes from history.
+    expect(last.get("Press")).toBe(20);
+  });
+
+  it("ignores skipped sets and unlogged weights", () => {
+    const last = lastLoggedWeights([
+      withSets(1000, [set("Squat", 60, true), set("Press", null), set("Row", 0)]),
+    ]);
+    expect(last.size).toBe(0);
+  });
+
+  it("hands the player a fallback without overwriting the plan's target", () => {
+    const known = library.core[0]!.id;
+    const { items } = resolveDay(library, day("A", [known]), new Map([[known, 18]]));
+    expect(items[0]!.lastWeightKg).toBe(18);
+    expect(items[0]!.targetWeightKg).toBeNull();
   });
 });

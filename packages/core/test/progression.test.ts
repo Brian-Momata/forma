@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { resolveArchetype } from "../src/archetypes.ts";
 import { generatePlan } from "../src/generator.ts";
 import { applyFeedback, progressionNote } from "../src/progression.ts";
 import type { SelectionContext } from "../src/selection.ts";
@@ -94,22 +95,22 @@ describe("how you get stronger depends on the situation", () => {
     expect(now.chainRank ?? 0).toBeGreaterThan(before.chainRank ?? 0);
   });
 
-  it("adds a set to the compounds on a dumbbell plan", () => {
-    // reps-then-load: there is a weight, but not one you can nudge by a kilo,
-    // so volume is the honest lever here.
+  it("adds reps rather than sets on a dumbbell plan", () => {
+    // This used to add a set to the compounds, on the reasoning that a dumbbell
+    // is not a weight you can nudge by a kilo. True, and the answer is to take
+    // the next dumbbell rather than to never touch the load: `reps-then-load`
+    // climbs the range, then steps the bell and drops back down. See "reps
+    // first, then the next dumbbell" below.
     const { plan, ctx } = build(["dumbbells", "bench"]);
     const next = applyFeedback(library, plan, "too-easy", ctx, 1);
 
-    const compoundBumped = working(next).some((item, i) => {
-      const before = working(plan)[i];
-      const ex = library.byId(item.exerciseId);
-      return (
-        ex?.mechanic === "compound" &&
-        before !== undefined &&
-        item.prescription.sets > before.prescription.sets
-      );
+    working(next).forEach((item, i) => {
+      const before = working(plan)[i]!;
+      expect(item.prescription.sets).toBe(before.prescription.sets);
+      if (before.prescription.reps !== undefined) {
+        expect(item.prescription.reps ?? 0).toBeGreaterThan(before.prescription.reps);
+      }
     });
-    expect(compoundBumped).toBe(true);
   });
 
   /**
@@ -160,6 +161,42 @@ describe("how you get stronger depends on the situation", () => {
       }
     });
 
+    /**
+     * The bug this guards: load progression was the only thing that ever wrote
+     * `targetWeightKg`, so a dumbbell plan -- which progresses by reps -- threw
+     * away the weight someone dialled in, every session, forever.
+     */
+    it("remembers the weight on a tier that does not progress by load", () => {
+      const { plan, ctx } = build(["dumbbells", "bench"]);
+      expect(plan.tier).toBe("dumbbell");
+      const first = working(plan)[0]!;
+      const logged = new Map([[first.exerciseId, 17.5]]);
+
+      for (const feel of ["too-easy", "just-right", "too-hard"] as Feel[]) {
+        const after = working(applyFeedback(library, plan, feel, ctx, 1, logged))[0]!;
+        expect(after.prescription.targetWeightKg).toBe(17.5);
+      }
+    });
+
+    it("follows the weight down when the person lifts lighter than the plan asked", () => {
+      const { plan, ctx } = build(["dumbbells", "bench"]);
+      const first = working(plan)[0]!;
+      const seeded: Plan = {
+        ...plan,
+        days: plan.days.map((d) => ({
+          ...d,
+          exercises: d.exercises.map((e) =>
+            e.warmup ? e : { ...e, prescription: { ...e.prescription, targetWeightKg: 20 } }
+          ),
+        })),
+      };
+
+      const logged = new Map([[first.exerciseId, 15]]);
+      const after = working(applyFeedback(library, seeded, "just-right", ctx, 1, logged))[0]!;
+      // Where they actually are, not where the plan hoped they would be.
+      expect(after.prescription.targetWeightKg).toBe(15);
+    });
+
     it("adds reps instead when nothing has been logged, and says so", () => {
       const { plan, ctx } = build(["barbell", "rack", "bench"]);
       const next = applyFeedback(library, plan, "too-easy", ctx, 1);
@@ -190,5 +227,113 @@ describe("how you get stronger depends on the situation", () => {
     expect(progressionNote("too-hard", { tier: "bodyweight" })).toBe(
       "Next session trims a set and adds 15s to every rest."
     );
+  });
+  /**
+   * The dumbbell tier is called `reps-then-load` and the plan's own rationale
+   * promises "you progress by adding reps, then weight". Only the first half
+   * was ever implemented: it added a set to the compounds and reps to
+   * everything else, forever, so a dumbbell plan climbed towards twenty-five
+   * curls -- a different exercise, not a harder one -- and never once asked for
+   * a heavier bell.
+   */
+  describe("reps first, then the next dumbbell", () => {
+    const dumbbell = () => build(["dumbbells", "bench"]);
+
+    it("climbs the rep range before it touches the weight", () => {
+      const { plan, ctx } = dumbbell();
+      const first = working(plan)[0]!;
+      const seeded: Plan = {
+        ...plan,
+        days: plan.days.map((d) => ({
+          ...d,
+          exercises: d.exercises.map((e) =>
+            e.warmup ? e : { ...e, prescription: { ...e.prescription, targetWeightKg: 12 } }
+          ),
+        })),
+      };
+
+      const after = working(applyFeedback(library, seeded, "too-easy", ctx, 1))[0]!;
+      expect(after.prescription.reps ?? 0).toBeGreaterThan(first.prescription.reps ?? 0);
+      // The weight holds while there are still reps to win.
+      expect(after.prescription.targetWeightKg).toBe(12);
+      expect(after.prescription.sets).toBe(first.prescription.sets);
+    });
+
+    it("never prescribes more reps than the range it was written from", () => {
+      const { plan, ctx } = dumbbell();
+      const top = resolveArchetype("strength", "dumbbell", "regular", plan.schedule.daysPerWeek)
+        .reps![1];
+
+      let current: Plan = {
+        ...plan,
+        days: plan.days.map((d) => ({
+          ...d,
+          exercises: d.exercises.map((e) =>
+            e.warmup ? e : { ...e, prescription: { ...e.prescription, targetWeightKg: 12 } }
+          ),
+        })),
+      };
+
+      // Ten straight "too easy" weeks. The range is a prescription, not a
+      // starting point to be climbed past: this used to run away to twenty-five
+      // reps and never touch the load.
+      for (let i = 0; i < 10; i++) {
+        current = applyFeedback(library, current, "too-easy", ctx, i + 1);
+        for (const item of working(current)) {
+          expect(item.prescription.reps ?? 0).toBeLessThanOrEqual(top);
+        }
+      }
+
+      // And ten weeks of it being too easy has actually made it heavier.
+      for (const item of working(current).filter((e) => e.prescription.reps !== undefined)) {
+        expect(item.prescription.targetWeightKg ?? 0).toBeGreaterThan(12);
+      }
+    });
+
+    it("takes the next dumbbell at the top of the range and drops back down", () => {
+      const { plan, ctx } = dumbbell();
+      const first = working(plan)[0]!;
+      // At the top of its range with a known load: this is the week the weight
+      // moves instead of the reps.
+      const topped: Plan = {
+        ...plan,
+        days: plan.days.map((d) => ({
+          ...d,
+          exercises: d.exercises.map((e) =>
+            e.warmup
+              ? e
+              : { ...e, prescription: { ...e.prescription, reps: 25, targetWeightKg: 12 } }
+          ),
+        })),
+      };
+
+      const after = working(applyFeedback(library, topped, "too-easy", ctx, 1))[0]!;
+      // The next dumbbell on the rack, not a kilo more than the last one.
+      expect(after.prescription.targetWeightKg).toBe(14.5);
+      expect(after.prescription.reps ?? 0).toBeLessThan(25);
+      expect(after.prescription.sets).toBe(first.prescription.sets);
+    });
+
+    it("keeps adding reps while nobody has said what is in their hands", () => {
+      const { plan, ctx } = dumbbell();
+      const topped: Plan = {
+        ...plan,
+        days: plan.days.map((d) => ({
+          ...d,
+          exercises: d.exercises.map((e) =>
+            e.warmup ? e : { ...e, prescription: { ...e.prescription, reps: 25 } }
+          ),
+        })),
+      };
+
+      const after = working(applyFeedback(library, topped, "too-easy", ctx, 1))[0]!;
+      expect(after.prescription.targetWeightKg ?? null).toBeNull();
+
+      // And the screen asks for the number rather than promising a step up.
+      expect(progressionNote("too-easy", { tier: "dumbbell" }, false)).not.toContain(
+        "steps the weight up"
+      );
+      expect(progressionNote("too-easy", { tier: "dumbbell" }, true)).toContain("weight");
+    });
   });
 });
