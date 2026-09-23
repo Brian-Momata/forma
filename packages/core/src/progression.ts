@@ -1,4 +1,4 @@
-import { TIERS, type ProgressionMethod } from "./archetypes.ts";
+import { resolveArchetype, TIERS, type ProgressionMethod } from "./archetypes.ts";
 import type { Library } from "./library/index.ts";
 import { stepChain, type SelectionContext } from "./selection.ts";
 import {
@@ -38,6 +38,16 @@ const MAX_WEIGHT_KG = 500;
 function loadStepKg(mechanic: Exercise["mechanic"]): number {
   return mechanic === "compound" ? 2.5 : 1;
 }
+
+/**
+ * The jump from one dumbbell to the next.
+ *
+ * Not `loadStepKg`: a rack goes 2.5, 5, 7.5, 10, and a kilo more than a 5kg
+ * dumbbell is a dumbbell nobody owns. The relative jump is large on a light
+ * isolation movement, which is exactly what dropping back to the bottom of the
+ * rep range is for -- that is the whole shape of double progression.
+ */
+const DUMBBELL_STEP_KG = 2.5;
 
 function bumpWeight(p: Prescription, current: number, step: number): Prescription {
   return { ...p, targetWeightKg: Math.min(MAX_WEIGHT_KG, current + step) };
@@ -96,6 +106,61 @@ function remember(item: PlanExercise, logged: LoggedWeights): PlanExercise {
   };
 }
 
+/**
+ * Reps first, then the next dumbbell.
+ *
+ * The double progression the `dumbbell` tier is named for: climb inside the
+ * prescribed rep range, and when you reach the top of it, take the next
+ * dumbbell and drop back to the bottom. Adding reps forever is how a dumbbell
+ * plan ends up asking for twenty-five curls -- which is a different exercise,
+ * not a harder one -- and the tier's own rationale promises weight.
+ *
+ * The window is the one the generator prescribed from, per side where the
+ * movement is one-sided, so "the top of the range" means the same number here
+ * as it did when the plan was written.
+ */
+function repsThenLoad(
+  item: PlanExercise,
+  exercise: Exercise,
+  window: readonly [number, number]
+): PlanExercise {
+  const p = item.prescription;
+  const reps = p.reps;
+  const known = p.targetWeightKg ?? null;
+
+  const [bottom, top] = exercise.unilateral
+    ? ([Math.max(3, Math.round(window[0] / 2)), Math.max(3, Math.round(window[1] / 2))] as const)
+    : window;
+
+  // Nothing to add load to, and nothing to count: fall back to reps.
+  if (reps === undefined) return { ...item, prescription: bumpReps(p, 2) };
+
+  if (reps < top) {
+    // Never past the top in one jump -- the range is the prescription.
+    return { ...item, prescription: { ...p, reps: Math.min(MAX_REPS, Math.min(top, reps + 2)) } };
+  }
+
+  // At the top of the range. This is where the load goes up -- unless we still
+  // do not know what is in their hands, in which case reps carry on and the
+  // Complete screen asks for the number rather than promising a change.
+  if (known === null) return { ...item, prescription: bumpReps(p, 2) };
+
+  return {
+    ...item,
+    prescription: {
+      ...bumpWeight(p, known, DUMBBELL_STEP_KG),
+      reps: Math.max(MIN_REPS, Math.min(MAX_REPS, bottom)),
+    },
+  };
+}
+
+/** The rep range this plan was written from. */
+function repWindow(plan: Plan, experience: SelectionContext["experience"]): [number, number] {
+  const arch = resolveArchetype(plan.goal, plan.tier, experience, plan.schedule.daysPerWeek);
+  // The generator's own fallback for a goal that prescribes no range.
+  return arch.reps ?? [10, 12];
+}
+
 export function applyFeedback(
   library: Library,
   plan: Plan,
@@ -105,6 +170,7 @@ export function applyFeedback(
   logged: LoggedWeights = new Map()
 ): Plan {
   const method: ProgressionMethod = TIERS[plan.tier].progression;
+  const window = repWindow(plan, ctx.experience);
 
   const days = plan.days.map((day) => ({
     ...day,
@@ -152,6 +218,10 @@ export function applyFeedback(
 
           if (method === "duration" || item.prescription.durationSec !== undefined) {
             return { ...item, prescription: bumpDuration(item.prescription, 10) };
+          }
+
+          if (method === "reps-then-load") {
+            return repsThenLoad(item, exercise, window);
           }
 
           if (method === "load") {
@@ -207,13 +277,22 @@ export function progressionNote(
 
   switch (feel) {
     case "too-easy":
-      return method === "chain"
-        ? "Next session moves you up to a harder variation."
-        : method === "load"
-          ? hasLoggedLoad
+      switch (method) {
+        case "chain":
+          return "Next session moves you up to a harder variation.";
+        case "load":
+          return hasLoggedLoad
             ? "Next session keeps the reps and asks for a little more weight."
-            : "Next session adds reps. Log the weight you lift and we can add load instead."
-          : "Next session adds a set to your compound lifts.";
+            : "Next session adds reps. Log the weight you lift and we can add load instead.";
+        case "reps-then-load":
+          // Reps *and* load, because which one moves depends on where in the
+          // range each movement currently sits.
+          return hasLoggedLoad
+            ? "Next session adds reps, and steps the weight up on anything already at the top of its range."
+            : "Next session adds reps. Log the weight you lift and we can step it up once you top the range.";
+        default:
+          return "Next session adds a set to your compound lifts.";
+      }
     case "too-hard":
       return "Next session trims a set and adds 15s to every rest.";
     case "just-right":
