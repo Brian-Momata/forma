@@ -82,6 +82,19 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Short viewports.
+
+   The design is drawn for a tall phone. On a short one -- an SE, a landscape
+   turn, a desktop window dragged small -- the player's fixed heights pushed the
+   controls past the bottom of a screen that deliberately cannot scroll, so the
+   button you need mid-set was simply not on it. `short:` trims the padding,
+   and `tiny:` -- a landscape turn, not a small phone -- drops the copy that is
+   encouragement rather than instruction. An SE keeps its words.
+   --------------------------------------------------------------------------- */
+@custom-variant short (@media (max-height: 700px));
+@custom-variant tiny (@media (max-height: 560px));
+
+/* ---------------------------------------------------------------------------
    Archivo's `wdth` axis is the app's signature — the design sets it at 104-118
    on every heading and numeral. Exposed as a utility so components never write
    raw font-variation-settings.

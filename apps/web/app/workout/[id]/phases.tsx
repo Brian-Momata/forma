@@ -57,9 +57,17 @@ function useChiming(): boolean {
 /** The big countdown. Re-renders once a second; nothing around it does. */
 function CountdownDisplay({ size, className = "" }: { size: "timer" | "rest"; className?: string }) {
   const remaining = useRemaining();
+  const clock = formatClock(remaining ?? 0);
   return (
-    <Display size={size} tabular className={className}>
-      {formatClock(remaining ?? 0)}
+    <Display
+      size={size}
+      tabular
+      className={className}
+      // Measured against the clock actually on screen, not "0:00": a rest can
+      // be extended past ten minutes, twenty seconds at a time.
+      fit={{ chars: clock.length, maxVh: size === "rest" ? 22 : 17 }}
+    >
+      {clock}
     </Display>
   );
 }
@@ -71,6 +79,7 @@ function ReadyCountdown() {
       size="ready"
       tabular
       className="-ml-3 mt-2"
+      fit={{ chars: 1, maxVh: 26 }}
       style={{ animation: "chimePop .45s ease-out" }}
     >
       {remaining ?? 0}
@@ -489,7 +498,7 @@ export function SetPhase({
 
   return (
     <Screen>
-      <div className="flex items-center gap-3 px-5 pb-[14px] pt-[58px]">
+      <div className="flex shrink-0 items-center gap-3 px-5 pb-[14px] pt-[58px] short:pt-[20px]">
         <button
           type="button"
           onClick={onExit}
@@ -519,7 +528,9 @@ export function SetPhase({
         </div>
       </div>
 
-      <div className="relative h-[272px] shrink-0">
+      {/* The demo is the first thing that can give ground: on a short screen
+          the buttons matter more than the picture. */}
+      <div className="relative shrink-0" style={{ height: "min(272px, 34vh)" }}>
         <MediaWell
           images={item.images}
           name={item.name}
@@ -547,7 +558,7 @@ export function SetPhase({
         </div>
       </div>
 
-      <div className="flex items-start gap-3 px-5 pt-[14px]">
+      <div className="flex min-h-0 shrink items-start gap-3 overflow-hidden px-5 pt-[14px] short:pt-[8px]">
         <div className="min-w-0 flex-1">
           {item.cues.slice(0, 2).map((cue, i) => (
             <div key={i} className="flex items-baseline gap-[11px] py-[7px]">
@@ -579,7 +590,7 @@ export function SetPhase({
 
       {guideOpen && <FormGuide item={item} onClose={() => setGuideOpen(false)} />}
 
-      <div className="relative flex flex-1 flex-col justify-end px-5 pb-[18px]">
+      <div className="relative flex min-h-0 flex-1 flex-col justify-end px-5 pb-[18px] short:pb-[10px]">
         <ChimeBurst tone="accent" />
 
         <TimerAnnouncer
@@ -620,7 +631,7 @@ export function SetPhase({
       </div>
 
       <div
-        className="flex gap-[10px] border-t border-hair-08 bg-screen/85 px-5 pt-[14px] backdrop-blur-[18px]"
+        className="flex shrink-0 gap-[10px] border-t border-hair-08 bg-screen/85 px-5 pt-[14px] backdrop-blur-[18px]"
         style={{ paddingBottom: "max(30px, env(safe-area-inset-bottom))" }}
       >
         {timed ? (
@@ -635,7 +646,7 @@ export function SetPhase({
             {/* A rep set can be interrupted just as easily as a timed one, and
                 the clock keeps running either way. */}
             <PillButton
-              className="h-[60px] w-[64px] shrink-0"
+              className="h-[60px] w-[64px] shrink-0 max-[360px]:w-[54px]"
               variant="outline"
               aria-label={paused ? "Resume" : "Pause"}
               onClick={toggle}
@@ -644,7 +655,13 @@ export function SetPhase({
             </PillButton>
           </>
         )}
-        <PillButton className="h-[60px] w-[74px] shrink-0" variant="muted" onClick={skip}>
+        {/* Narrow enough to survive a 320px phone: three fixed-width buttons
+            plus the gutters used to run past the right edge. */}
+        <PillButton
+          className="h-[60px] w-[74px] shrink-0 max-[360px]:w-[62px] max-[360px]:px-3"
+          variant="muted"
+          onClick={skip}
+        >
           Skip
         </PillButton>
       </div>
@@ -670,12 +687,12 @@ export function SwitchPhase({ state }: { state: PlayerState }) {
 
   return (
     <Screen>
-      <div className="pt-[46px]" />
+      <div className="pt-[46px] short:pt-[14px]" />
       <div
-        className="flex flex-1 flex-col rounded-t-[22px] px-[22px] pb-[30px] pt-[26px]"
+        className="flex min-h-0 flex-1 flex-col rounded-t-[22px] px-[22px] pb-[30px] pt-[26px] short:pt-[16px]"
         style={{ background: "var(--acc)", color: "var(--color-screen)" }}
       >
-        <div className="flex flex-1 flex-col justify-center">
+        <div className="flex min-h-0 flex-1 flex-col justify-center overflow-hidden">
           <div className="text-[10.5px] font-extrabold uppercase tracking-[.24em] opacity-60">
             Left side clear
           </div>
@@ -743,7 +760,7 @@ function SwitchCountdown() {
   const remaining = useRemaining();
   return (
     <div className="flex items-baseline gap-3">
-      <Display size="timer" tabular>
+      <Display size="timer" tabular fit={{ chars: String(remaining ?? 0).length, maxVh: 17 }}>
         {remaining ?? 0}
       </Display>
       <div
@@ -785,7 +802,7 @@ export function RestPhase({ state, onExit }: { state: PlayerState; onExit: () =>
         }}
       />
 
-      <div className="relative flex items-center justify-between px-5 pt-[58px]">
+      <div className="relative flex shrink-0 items-center justify-between px-5 pt-[58px] short:pt-[20px]">
         <button
           type="button"
           onClick={onExit}
@@ -809,7 +826,7 @@ export function RestPhase({ state, onExit }: { state: PlayerState; onExit: () =>
         </div>
       </div>
 
-      <div className="relative flex flex-1 flex-col justify-center px-[22px]">
+      <div className="relative flex min-h-0 flex-1 flex-col justify-center px-[22px]">
         <ChimeBurst tone="rest" />
         <TimerAnnouncer
           phase={`${state.exIndex}-${state.setIndex}-rest`}
@@ -820,12 +837,12 @@ export function RestPhase({ state, onExit }: { state: PlayerState; onExit: () =>
         <div className="mt-[22px]">
           <PhaseBar tone="rest" />
         </div>
-        <p className="mt-5 max-w-[270px] text-[13.5px] font-medium leading-[1.55] text-r2">
+        <p className="mt-5 max-w-[270px] text-[13.5px] font-medium leading-[1.55] text-r2 tiny:hidden">
           Breathe out slowly. Shake the legs loose and set up before the timer runs out.
         </p>
       </div>
 
-      <Sheet background="rgba(9,8,26,.82)" grabber className="relative backdrop-blur-[20px]">
+      <Sheet background="rgba(9,8,26,.82)" grabber className="relative shrink-0 backdrop-blur-[20px]">
         <Kicker tone="rest">Next up</Kicker>
         <div className="mt-2 flex items-baseline justify-between gap-3">
           <Display size="upNext" weight={800}>
@@ -870,12 +887,12 @@ export function TransitionPhase({ state }: { state: PlayerState }) {
 
   return (
     <Screen>
-      <div className="pt-[46px]" />
+      <div className="pt-[46px] short:pt-[14px]" />
       <div
-        className="flex flex-1 flex-col justify-between rounded-t-[22px] px-[22px] pb-[30px] pt-[26px]"
+        className="flex min-h-0 flex-1 flex-col justify-between rounded-t-[22px] px-[22px] pb-[30px] pt-[26px] short:pt-[16px]"
         style={{ background: "var(--acc)", color: "var(--color-screen)" }}
       >
-        <div>
+        <div className="min-h-0 overflow-y-auto">
           <div className="flex items-center justify-between">
             <div className="text-[10.5px] font-extrabold uppercase tracking-[.24em] opacity-60">
               Exercise clear · changeover
@@ -940,7 +957,7 @@ export function TransitionPhase({ state }: { state: PlayerState }) {
           )}
         </div>
 
-        <div className="flex items-center gap-[14px]">
+        <div className="flex shrink-0 items-center gap-[14px] pt-[14px]">
           <PillButton className="h-[60px] flex-1" variant="dark" onClick={skip}>
             Start now
           </PillButton>

@@ -32,12 +32,37 @@ const DISPLAY = {
 
 export type DisplaySize = keyof typeof DISPLAY;
 
+/**
+ * How much room a numeral is allowed to take when the screen is smaller than
+ * the artboard.
+ *
+ * `chars` is how many glyphs have to fit side by side; `maxVh` is the share of
+ * a short screen the numeral may claim before the controls under it start
+ * going over the edge.
+ */
+export interface DisplayFit {
+  chars: number;
+  maxVh: number;
+}
+
+/**
+ * The design's px size, or whatever of it the screen can actually hold.
+ *
+ * Archivo's tabular figures at these width axes run about 0.6em each, inside
+ * the screen's 22px gutters. Capped at the design size, so the phone the
+ * artboard was drawn for renders exactly as drawn.
+ */
+function fitted(px: number, fit: DisplayFit): string {
+  return `min(${px}px, calc((100vw - 34px) / ${(fit.chars * 0.6).toFixed(2)}), ${fit.maxVh}vh)`;
+}
+
 export function Display({
   size,
   children,
   className = "",
   tabular = false,
   weight = 900,
+  fit,
   style,
 }: {
   size: DisplaySize;
@@ -45,6 +70,12 @@ export function Display({
   className?: string;
   tabular?: boolean;
   weight?: 800 | 900;
+  /**
+   * Shrink to fit a screen narrower or shorter than the artboard, rather than
+   * running off it. The player's numerals are the only things big enough to
+   * need this.
+   */
+  fit?: DisplayFit;
   style?: CSSProperties;
 }) {
   const d = DISPLAY[size];
@@ -55,7 +86,7 @@ export function Display({
         fontFamily: "var(--font-display)",
         fontVariationSettings: `"wdth" ${d.wdth}`,
         fontWeight: weight,
-        fontSize: d.fontSize,
+        fontSize: fit ? fitted(d.fontSize, fit) : d.fontSize,
         letterSpacing: d.letterSpacing,
         lineHeight: d.lineHeight,
         fontVariantNumeric: tabular ? "tabular-nums" : undefined,
@@ -282,9 +313,20 @@ export function Screen({
   );
 }
 
-/** Scrollable body between a fixed header and footer. */
+/**
+ * Scrollable body between a fixed header and footer.
+ *
+ * `min-h-0` is load-bearing: a flex child's minimum size is its content, so
+ * without it this box grows past the screen instead of scrolling, and its rows
+ * end up drawn underneath the footer where they cannot be tapped. That is how
+ * the last option on an onboarding step became unclickable in landscape.
+ */
 export function ScrollArea({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`flex-1 overflow-y-auto overscroll-contain ${className}`}>{children}</div>;
+  return (
+    <div className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${className}`}>
+      {children}
+    </div>
+  );
 }
 
 /** The frosted bar pinned to the bottom of most screens. */
