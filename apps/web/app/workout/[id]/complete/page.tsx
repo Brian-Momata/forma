@@ -15,7 +15,7 @@ import { Display, PillButton, Screen } from "@/components/ui";
 import { useBootstrap } from "@/lib/use-bootstrap";
 import { savePlan } from "@/db/repo";
 import { useApp } from "@/store/app";
-import { useSession } from "@/store/session";
+import { readUnratedSession, useSession } from "@/store/session";
 
 const OPTIONS: Array<{ value: Feel; label: string }> = [
   { value: "too-easy", label: "Too easy" },
@@ -34,6 +34,7 @@ export default function CompletePage() {
   const meta = useSession((s) => s.meta);
   const finish = useSession((s) => s.finish);
   const clear = useSession((s) => s.clear);
+  const restore = useSession((s) => s.restore);
 
   const [feel, setFeel] = useState<Feel>("just-right");
   const [saving, setSaving] = useState(false);
@@ -69,11 +70,21 @@ export default function CompletePage() {
     };
   }, [player]);
 
-  // Reaching this page with nothing to show means a stale link or a reload
-  // after finishing; send them home rather than showing an empty card.
+  // A reload, or reopening the app, lands here with nothing in memory. The
+  // finished session is still checkpointed until it is rated, so pick it back
+  // up; only with nothing to rate is this a stale link, and then it is home.
   useEffect(() => {
-    if (!player) router.replace("/");
-  }, [player, router]);
+    if (player) return;
+    let live = true;
+    void readUnratedSession().then((saved) => {
+      if (!live) return;
+      if (saved) restore(saved.player, saved.meta);
+      else router.replace("/");
+    });
+    return () => {
+      live = false;
+    };
+  }, [player, restore, router]);
 
   if (!player || !stats) {
     return (
@@ -90,13 +101,16 @@ export default function CompletePage() {
     try {
       await finish(feel);
 
-      // Feedback is what makes next week different from this one.
-      if (plan && library && profile) {
+      // Feedback is what makes next week different from this one -- but only
+      // for a session that had some training in it. Warm-ups alone say nothing
+      // about whether the work was too easy.
+      if (plan && library && profile && meta && stats.sets > 0) {
         const setup = setups.find((s) => s.id === plan.setupId);
         if (setup) {
           const next = applyFeedback(
             library,
             plan,
+            meta.dayIndex,
             feel,
             { setup, limitations: profile.limitations, experience: profile.experience },
             Date.now(),
@@ -154,41 +168,49 @@ export default function CompletePage() {
           </div>
         ))}
 
-        <div className="mt-[26px] text-[11px] font-extrabold uppercase tracking-[.18em] opacity-60">
-          How did that feel?
-        </div>
-        <div className="mt-3 flex gap-2">
-          {OPTIONS.map((option) => {
-            const on = feel === option.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setFeel(option.value)}
-                aria-pressed={on}
-                className="relative flex h-[46px] flex-1 items-center justify-center text-[12.5px] font-bold"
-                style={{
-                  border: "1px solid rgba(8,9,11,.28)",
-                  background: on ? "var(--color-screen)" : "transparent",
-                  color: on ? "var(--acc)" : "inherit",
-                }}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
+        {stats.sets > 0 ? (
+          <>
+            <div className="mt-[26px] text-[11px] font-extrabold uppercase tracking-[.18em] opacity-60">
+              How did that feel?
+            </div>
+            <div className="mt-3 flex gap-2">
+              {OPTIONS.map((option) => {
+                const on = feel === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setFeel(option.value)}
+                    aria-pressed={on}
+                    className="relative flex h-[46px] flex-1 items-center justify-center text-[12.5px] font-bold"
+                    style={{
+                      border: "1px solid rgba(8,9,11,.28)",
+                      background: on ? "var(--color-screen)" : "transparent",
+                      color: on ? "var(--acc)" : "inherit",
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
 
-        <p className="mt-[14px] text-[13px] font-semibold leading-[1.5] opacity-72">
-          {progressionNote(
-            feel,
-            { tier: plan?.tier ?? "bodyweight" },
-            loggedWeights.size > 0 ||
-              (plan?.days ?? []).some((d) =>
-                d.exercises.some((e) => (e.prescription.targetWeightKg ?? null) !== null)
-              )
-          )}
-        </p>
+            <p className="mt-[14px] text-[13px] font-semibold leading-[1.5] opacity-72">
+              {progressionNote(
+                feel,
+                { tier: plan?.tier ?? "bodyweight" },
+                loggedWeights.size > 0 ||
+                  (plan?.days[meta?.dayIndex ?? 0]?.exercises ?? []).some(
+                    (e) => (e.prescription.targetWeightKg ?? null) !== null
+                  )
+              )}
+            </p>
+          </>
+        ) : (
+          <p className="mt-[26px] text-[13px] font-semibold leading-[1.5] opacity-72">
+            Nothing past the warm-up was logged, so the plan stays as it is.
+          </p>
+        )}
 
         <div className="flex-1" />
         <PillButton className="mt-8 h-[60px]" variant="dark" onClick={done} disabled={saving}>

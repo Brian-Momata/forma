@@ -150,12 +150,14 @@ export interface PlanRequest {
  *
  * Plans the person has edited are never touched: those are theirs, not ours to
  * overwrite. A setup with no plan at all gets its first one here, which is the
- * onboarding path.
+ * onboarding path -- unless `createFirst` is false, for callers that are only
+ * rebuilding what exists and must not add a plan or change the active one.
  */
 export async function regenerateSetupPlans(
   library: Library,
   profile: Profile,
-  setup: Setup
+  setup: Setup,
+  { createFirst = true }: { createFirst?: boolean } = {}
 ): Promise<Plan[]> {
   const existing = await plansForSetup(setup.id);
   const previous = existing.filter((p) => p.generated);
@@ -164,7 +166,7 @@ export async function regenerateSetupPlans(
     // Nothing generated here. Only build a first plan if the person has not
     // already made one by hand -- otherwise we would be adding a plan they
     // never asked for.
-    if (existing.length > 0) return [];
+    if (existing.length > 0 || !createFirst) return [];
     const plan = generatePlan(library, profile, setup, {
       now: now(),
       planId: newId("plan"),
@@ -328,25 +330,48 @@ export function newSession(
 }
 
 /**
+ * Whether a session has anything in it worth calling a day trained.
+ *
+ * One ended straight after it was opened, or with every set skipped, is not:
+ * keeping it would count it as a session, keep a streak alive on a day nothing
+ * was done, and move the plan's rotation past a day that was never trained.
+ * Skipped sets on their own are not history anyone is missing.
+ */
+export function hasTrained(sets: readonly SetRecord[]): boolean {
+  return sets.some((s) => !s.skipped);
+}
+
+/**
  * Banks what has happened so far, mid-session.
  *
  * Called on every phase change, because the sets someone has already done are
  * not ours to hold in memory: closing the app on the summary screen, or being
  * killed by the OS mid-workout, must not lose an hour of training
  * (ENGINEERING.md §1.5).
+ *
+ * Read and write happen in one transaction. The store fires these without
+ * waiting for them, and a read taken before `finishSession` landed but written
+ * after it would put the row back without its feedback.
  */
 export async function recordSessionProgress(
   id: SessionId,
   sets: readonly SetRecord[],
   endedAt: number | null
 ): Promise<void> {
-  const existing = await db.sessions.get(id);
-  if (!existing) return;
-  await db.sessions.put({
-    ...existing,
-    sets: [...sets],
-    endedAt: endedAt ?? existing.endedAt,
-    updatedAt: now(),
+  await db.transaction("rw", db.sessions, async () => {
+    const existing = await db.sessions.get(id);
+    if (!existing) return;
+    const closedAt = endedAt ?? existing.endedAt;
+    if (closedAt !== null && !hasTrained(sets)) {
+      await db.sessions.delete(id);
+      return;
+    }
+    await db.sessions.put({
+      ...existing,
+      sets: [...sets],
+      endedAt: closedAt,
+      updatedAt: now(),
+    });
   });
 }
 
@@ -356,14 +381,20 @@ export async function finishSession(
   sets: SetRecord[],
   feel: Feel | null
 ): Promise<void> {
-  const existing = await db.sessions.get(id);
-  if (!existing) return;
-  await db.sessions.put({
-    ...existing,
-    sets,
-    feel,
-    endedAt: existing.endedAt ?? now(),
-    updatedAt: now(),
+  await db.transaction("rw", db.sessions, async () => {
+    const existing = await db.sessions.get(id);
+    if (!existing) return;
+    if (!hasTrained(sets)) {
+      await db.sessions.delete(id);
+      return;
+    }
+    await db.sessions.put({
+      ...existing,
+      sets,
+      feel,
+      endedAt: existing.endedAt ?? now(),
+      updatedAt: now(),
+    });
   });
 }
 

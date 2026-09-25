@@ -19,6 +19,7 @@ import {
   weekdayLabel,
 } from "@/lib/plan";
 import { useApp } from "@/store/app";
+import { readUnratedSession } from "@/store/session";
 
 const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
 const FULL_WEEKDAYS = [
@@ -43,6 +44,19 @@ export default function TodayPage() {
   useEffect(() => {
     if (ready && !profile) router.replace("/welcome");
   }, [ready, profile, router]);
+
+  // The app reopens here, not on the Complete screen it was closed on. A
+  // finished session that was never rated goes back there, because its
+  // feedback is the only thing that moves the plan on.
+  useEffect(() => {
+    let live = true;
+    void readUnratedSession().then((saved) => {
+      if (live && saved) router.replace(`/workout/${saved.meta.planId}/complete`);
+    });
+    return () => {
+      live = false;
+    };
+  }, [router]);
 
   const plan = activePlan;
 

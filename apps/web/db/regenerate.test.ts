@@ -14,6 +14,7 @@ import raw from "../../../packages/core/src/library/exercises.json" with { type:
 import {
   createCustomPlan,
   createGeneratedPlan,
+  getActivePlanId,
   newId,
   plansForSetup,
   regenerateSetupPlans,
@@ -144,5 +145,20 @@ describe("regenerating a setup's plans", () => {
 
     expect(await regenerateSetupPlans(library, profile, other)).toHaveLength(0);
     expect(await plansForSetup(other.id)).toHaveLength(1);
+  });
+
+  it("does not start a plan, or switch to one, when only rebuilding what exists", async () => {
+    // Changing a limitation rebuilds every setup's plans. A setup whose plans
+    // were all deleted has nothing to rebuild, and handing it a new plan -- and
+    // making that the one Today shows -- is a change nobody asked for.
+    const empty: Setup = { ...setup, id: newId("setup") as SetupId, name: "Old gym" };
+    await saveSetup(empty);
+    const current = await createGeneratedPlan(library, profile, setup, { name: "Current" });
+
+    expect(
+      await regenerateSetupPlans(library, profile, empty, { createFirst: false })
+    ).toHaveLength(0);
+    expect(await plansForSetup(empty.id)).toHaveLength(0);
+    expect(await getActivePlanId()).toBe(current.id);
   });
 });

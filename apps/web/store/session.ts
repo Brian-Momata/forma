@@ -5,6 +5,7 @@ import {
   abandon as abandonPlayer,
   addRest as addRestPlayer,
   completeSet as completeSetPlayer,
+  completedSets,
   setWeight as setWeightPlayer,
   skip as skipPlayer,
   start as startPlayer,
@@ -19,6 +20,7 @@ import {
   checkpoint,
   clearCheckpoint,
   finishSession,
+  readCheckpoint,
   recordSessionProgress,
 } from "@/db/repo";
 
@@ -50,7 +52,8 @@ interface SessionStore {
   completeSet(): void;
   addRest(seconds: number): void;
   setWeight(kg: number | null): void;
-  abandon(): void;
+  /** Ends the session early. False when nothing was done, so there is nothing to rate. */
+  abandon(): boolean;
   finish(feel: Feel | null): Promise<void>;
   restore(player: PlayerState, meta: SessionMeta): void;
   clear(): void;
@@ -131,14 +134,26 @@ export const useSession = create<SessionStore>((set, get) => ({
 
   abandon() {
     const { player, meta } = get();
-    if (!player) return;
+    if (!player) return false;
     const next = abandonPlayer(player, Date.now());
+
+    // Nothing done: there is no session to keep and nothing to rate. Closing it
+    // drops the row (see `hasTrained`), so it neither counts nor moves the
+    // plan on to the next day.
+    if (completedSets(next) === 0) {
+      if (meta) void recordSessionProgress(meta.sessionId, next.records, next.endedAt);
+      set({ player: null, meta: null });
+      void clearCheckpoint();
+      return false;
+    }
+
     set({ player: next });
     // "End and save" has to actually save. The sets are already banked by the
     // ticks that got here; this is what closes the session so it counts as
-    // trained rather than sitting half-open forever.
-    if (meta) void recordSessionProgress(meta.sessionId, next.records, next.endedAt);
-    void clearCheckpoint();
+    // trained rather than sitting half-open forever. The checkpoint is kept,
+    // finished, so the Complete screen survives a reload until it is rated.
+    if (meta) persist(next, meta);
+    return true;
   },
 
   async finish(feel) {
@@ -165,3 +180,16 @@ export const useSession = create<SessionStore>((set, get) => ({
     void clearCheckpoint();
   },
 }));
+
+/**
+ * A session that finished but was never rated, if there is one.
+ *
+ * Its feedback is what progresses the plan and writes the weights lifted back
+ * onto it, and the only place that happens is the Complete screen. Closing the
+ * app there, or reloading it, used to lose both: the session was already
+ * closed, so nothing ever asked again.
+ */
+export async function readUnratedSession(): Promise<SessionCheckpoint | undefined> {
+  const saved = await readCheckpoint<SessionCheckpoint>();
+  return saved?.player.phase === "complete" ? saved : undefined;
+}

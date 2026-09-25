@@ -23,16 +23,48 @@ const working = (plan: Plan) => plan.days[0]!.exercises.filter((e) => !e.warmup)
 const warmups = (plan: Plan) => plan.days[0]!.exercises.filter((e) => e.warmup);
 
 describe("progression responds to how the session felt", () => {
-  it("advances the week on any feedback", () => {
+  it("turns the week over when the rotation does, not after every session", () => {
     const { plan, ctx } = build([]);
+    const last = plan.days.length - 1;
+    expect(last).toBeGreaterThan(0);
     for (const feel of ["too-easy", "just-right", "too-hard"] as Feel[]) {
-      expect(applyFeedback(library, plan, feel, ctx, 1).week).toBe(plan.week + 1);
+      expect(applyFeedback(library, plan, 0, feel, ctx, 1).week).toBe(plan.week);
+      expect(applyFeedback(library, plan, last, feel, ctx, 1).week).toBe(plan.week + 1);
     }
+  });
+
+  it("changes only the day that was trained", () => {
+    const { plan, ctx } = build(["barbell", "rack", "bench"]);
+    expect(plan.days.length).toBeGreaterThan(1);
+    // Every movement has a known load, so "too easy" would move all of them.
+    const seeded: Plan = {
+      ...plan,
+      days: plan.days.map((d) => ({
+        ...d,
+        exercises: d.exercises.map((e) => ({
+          ...e,
+          prescription: { ...e.prescription, targetWeightKg: 40 },
+        })),
+      })),
+    };
+    const logged = new Map(
+      seeded.days.flatMap((d) => d.exercises.map((e) => [e.exerciseId, 60] as const))
+    );
+    for (const feel of ["too-easy", "just-right", "too-hard"] as Feel[]) {
+      const next = applyFeedback(library, seeded, 0, feel, ctx, 1, logged);
+      expect(next.days[0]).not.toEqual(seeded.days[0]);
+      expect(next.days.slice(1)).toEqual(seeded.days.slice(1));
+    }
+  });
+
+  it("leaves a plan alone for a day it does not have", () => {
+    const { plan, ctx } = build([]);
+    expect(applyFeedback(library, plan, plan.days.length, "too-easy", ctx, 1)).toBe(plan);
   });
 
   it("trims a set and lengthens rest when it was too hard", () => {
     const { plan, ctx } = build(["dumbbells", "bench"]);
-    const next = applyFeedback(library, plan, "too-hard", ctx, 1);
+    const next = applyFeedback(library, plan, 0, "too-hard", ctx, 1);
 
     working(next).forEach((item, i) => {
       const before = working(plan)[i]!;
@@ -43,7 +75,7 @@ describe("progression responds to how the session felt", () => {
 
   it("nudges reps up when it felt just right", () => {
     const { plan, ctx } = build(["dumbbells", "bench"]);
-    const next = applyFeedback(library, plan, "just-right", ctx, 1);
+    const next = applyFeedback(library, plan, 0, "just-right", ctx, 1);
 
     working(next).forEach((item, i) => {
       const before = working(plan)[i]!;
@@ -57,7 +89,7 @@ describe("progression responds to how the session felt", () => {
   it("never progresses the warm-up", () => {
     const { plan, ctx } = build([]);
     for (const feel of ["too-easy", "just-right", "too-hard"] as Feel[]) {
-      const next = applyFeedback(library, plan, feel, ctx, 1);
+      const next = applyFeedback(library, plan, 0, feel, ctx, 1);
       expect(warmups(next)).toEqual(warmups(plan));
     }
   });
@@ -65,11 +97,11 @@ describe("progression responds to how the session felt", () => {
   it("cannot drive a plan below one set or above five", () => {
     const { plan, ctx } = build(["dumbbells", "bench"]);
     let down = plan;
-    for (let i = 0; i < 10; i++) down = applyFeedback(library, down, "too-hard", ctx, i);
+    for (let i = 0; i < 10; i++) down = applyFeedback(library, down, 0, "too-hard", ctx, i);
     for (const item of working(down)) expect(item.prescription.sets).toBeGreaterThanOrEqual(1);
 
     let up = plan;
-    for (let i = 0; i < 10; i++) up = applyFeedback(library, up, "too-easy", ctx, i);
+    for (let i = 0; i < 10; i++) up = applyFeedback(library, up, 0, "too-easy", ctx, i);
     for (const item of working(up)) {
       expect(item.prescription.sets).toBeLessThanOrEqual(5);
       expect(item.prescription.reps ?? 0).toBeLessThanOrEqual(25);
@@ -84,7 +116,7 @@ describe("how you get stronger depends on the situation", () => {
     const chained = working(plan).find((item) => library.byId(item.exerciseId)?.chainId);
     expect(chained, "expected a chained bodyweight movement").toBeDefined();
 
-    const next = applyFeedback(library, plan, "too-easy", ctx, 1);
+    const next = applyFeedback(library, plan, 0, "too-easy", ctx, 1);
     const after = working(next).find(
       (_, i) => working(plan)[i]?.exerciseId === chained?.exerciseId
     );
@@ -102,7 +134,7 @@ describe("how you get stronger depends on the situation", () => {
     // climbs the range, then steps the bell and drops back down. See "reps
     // first, then the next dumbbell" below.
     const { plan, ctx } = build(["dumbbells", "bench"]);
-    const next = applyFeedback(library, plan, "too-easy", ctx, 1);
+    const next = applyFeedback(library, plan, 0, "too-easy", ctx, 1);
 
     working(next).forEach((item, i) => {
       const before = working(plan)[i]!;
@@ -124,7 +156,7 @@ describe("how you get stronger depends on the situation", () => {
       const first = working(plan)[0]!;
       const logged = new Map([[first.exerciseId, 60]]);
 
-      const next = applyFeedback(library, plan, "too-easy", ctx, 1, logged);
+      const next = applyFeedback(library, plan, 0, "too-easy", ctx, 1, logged);
       const after = working(next)[0]!;
 
       expect(after.prescription.targetWeightKg).toBeGreaterThan(60);
@@ -144,7 +176,7 @@ describe("how you get stronger depends on the situation", () => {
         })),
       };
 
-      const next = applyFeedback(library, seeded, "too-easy", ctx, 1);
+      const next = applyFeedback(library, seeded, 0, "too-easy", ctx, 1);
       const repBased = working(next).filter((e) => e.prescription.reps !== undefined);
       expect(repBased.length).toBeGreaterThan(0);
       for (const item of repBased) {
@@ -173,7 +205,7 @@ describe("how you get stronger depends on the situation", () => {
       const logged = new Map([[first.exerciseId, 17.5]]);
 
       for (const feel of ["too-easy", "just-right", "too-hard"] as Feel[]) {
-        const after = working(applyFeedback(library, plan, feel, ctx, 1, logged))[0]!;
+        const after = working(applyFeedback(library, plan, 0, feel, ctx, 1, logged))[0]!;
         expect(after.prescription.targetWeightKg).toBe(17.5);
       }
     });
@@ -192,14 +224,14 @@ describe("how you get stronger depends on the situation", () => {
       };
 
       const logged = new Map([[first.exerciseId, 15]]);
-      const after = working(applyFeedback(library, seeded, "just-right", ctx, 1, logged))[0]!;
+      const after = working(applyFeedback(library, seeded, 0, "just-right", ctx, 1, logged))[0]!;
       // Where they actually are, not where the plan hoped they would be.
       expect(after.prescription.targetWeightKg).toBe(15);
     });
 
     it("adds reps instead when nothing has been logged, and says so", () => {
       const { plan, ctx } = build(["barbell", "rack", "bench"]);
-      const next = applyFeedback(library, plan, "too-easy", ctx, 1);
+      const next = applyFeedback(library, plan, 0, "too-easy", ctx, 1);
 
       const before = working(plan)[0]!;
       const after = working(next)[0]!;
@@ -252,7 +284,7 @@ describe("how you get stronger depends on the situation", () => {
         })),
       };
 
-      const after = working(applyFeedback(library, seeded, "too-easy", ctx, 1))[0]!;
+      const after = working(applyFeedback(library, seeded, 0, "too-easy", ctx, 1))[0]!;
       expect(after.prescription.reps ?? 0).toBeGreaterThan(first.prescription.reps ?? 0);
       // The weight holds while there are still reps to win.
       expect(after.prescription.targetWeightKg).toBe(12);
@@ -278,7 +310,7 @@ describe("how you get stronger depends on the situation", () => {
       // starting point to be climbed past: this used to run away to twenty-five
       // reps and never touch the load.
       for (let i = 0; i < 10; i++) {
-        current = applyFeedback(library, current, "too-easy", ctx, i + 1);
+        current = applyFeedback(library, current, 0, "too-easy", ctx, i + 1);
         for (const item of working(current)) {
           expect(item.prescription.reps ?? 0).toBeLessThanOrEqual(top);
         }
@@ -307,7 +339,7 @@ describe("how you get stronger depends on the situation", () => {
         })),
       };
 
-      const after = working(applyFeedback(library, topped, "too-easy", ctx, 1))[0]!;
+      const after = working(applyFeedback(library, topped, 0, "too-easy", ctx, 1))[0]!;
       // The next dumbbell on the rack, not a kilo more than the last one.
       expect(after.prescription.targetWeightKg).toBe(14.5);
       expect(after.prescription.reps ?? 0).toBeLessThan(25);
@@ -326,7 +358,7 @@ describe("how you get stronger depends on the situation", () => {
         })),
       };
 
-      const after = working(applyFeedback(library, topped, "too-easy", ctx, 1))[0]!;
+      const after = working(applyFeedback(library, topped, 0, "too-easy", ctx, 1))[0]!;
       expect(after.prescription.targetWeightKg ?? null).toBeNull();
 
       // And the screen asks for the number rather than promising a step up.

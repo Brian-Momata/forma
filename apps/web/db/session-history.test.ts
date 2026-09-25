@@ -103,4 +103,50 @@ describe("a session survives the app closing", () => {
     // at 100 is worse than no total at all.
     expect(await countFinishedSessions()).toBe(120);
   });
+
+  it("does not keep a session that closed with nothing done", async () => {
+    await db.delete();
+    await db.open();
+
+    // Opened by mistake and ended straight away, or every set skipped: it is
+    // not a day trained, so it must not count, keep a streak alive, or move
+    // the plan on to the next day.
+    const empty = newSession("p1" as PlanId, "s1" as SetupId, 0, "Full Body A");
+    await saveSession(empty);
+    await recordSessionProgress(empty.id, [], 5_000);
+    expect(await getSession(empty.id)).toBeUndefined();
+
+    const skipped = newSession("p1" as PlanId, "s1" as SetupId, 0, "Full Body A");
+    await saveSession(skipped);
+    await recordSessionProgress(skipped.id, [{ ...set("Squat", 0), skipped: true }], null);
+    await finishSession(skipped.id, [{ ...set("Squat", 0), skipped: true }], "just-right");
+    expect(await getSession(skipped.id)).toBeUndefined();
+
+    expect(await countFinishedSessions()).toBe(0);
+  });
+
+  it("keeps a session still in progress even before its first set", async () => {
+    await db.delete();
+    await db.open();
+
+    const session = newSession("p1" as PlanId, "s1" as SetupId, 0, "Full Body A");
+    await saveSession(session);
+    await recordSessionProgress(session.id, [], null);
+    expect(await getSession(session.id)).toBeDefined();
+  });
+
+  it("does not let a late mid-session write erase the feedback", async () => {
+    await db.delete();
+    await db.open();
+
+    const session = newSession("p1" as PlanId, "s1" as SetupId, 0, "Full Body A");
+    await saveSession(session);
+    // The store fires these without waiting, so they can interleave.
+    await Promise.all([
+      recordSessionProgress(session.id, [set("Squat", 0)], 5_000),
+      finishSession(session.id, [set("Squat", 0)], "too-easy"),
+      recordSessionProgress(session.id, [set("Squat", 0)], 5_000),
+    ]);
+    expect((await getSession(session.id))?.feel).toBe("too-easy");
+  });
 });

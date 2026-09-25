@@ -161,9 +161,21 @@ function repWindow(plan: Plan, experience: SelectionContext["experience"]): [num
   return arch.reps ?? [10, 12];
 }
 
+/**
+ * Only the day that was trained changes, and the week turns over only when the
+ * rotation does.
+ *
+ * How one session felt says nothing about a day that was not done: "too easy"
+ * on an upper-body day must not add weight to Thursday's squats, and a
+ * three-day plan progressed after every session would move three times a week
+ * while its "week" counted sessions. A lift that appears on several days is
+ * progressed by each day's own feedback, which is also what keeps a heavy day
+ * and a light day of the same movement apart.
+ */
 export function applyFeedback(
   library: Library,
   plan: Plan,
+  dayIndex: number,
   feel: Feel,
   ctx: SelectionContext,
   now: number,
@@ -171,94 +183,99 @@ export function applyFeedback(
 ): Plan {
   const method: ProgressionMethod = TIERS[plan.tier].progression;
   const window = repWindow(plan, ctx.experience);
+  if (!plan.days[dayIndex]) return plan;
 
-  const days = plan.days.map((day) => ({
-    ...day,
-    exercises: day.exercises.map((entry): PlanExercise => {
-      // Warm-ups are not a training stimulus; they never progress.
-      if (entry.warmup) return entry;
-      const item = remember(entry, logged);
-      const exercise = library.byId(item.exerciseId);
+  const days = plan.days.map((day, i) => {
+    if (i !== dayIndex) return day;
+    return {
+      ...day,
+      exercises: day.exercises.map((entry): PlanExercise => {
+        // Warm-ups are not a training stimulus; they never progress.
+        if (entry.warmup) return entry;
+        const item = remember(entry, logged);
+        const exercise = library.byId(item.exerciseId);
 
-      switch (feel) {
-        case "too-hard":
-          return easier(item);
+        switch (feel) {
+          case "too-hard":
+            return easier(item);
 
-        case "just-right":
-          // Hold the load, let the reps creep up.
-          return item.prescription.reps !== undefined
-            ? { ...item, prescription: bumpReps(item.prescription, 1) }
-            : { ...item, prescription: bumpDuration(item.prescription, 5) };
+          case "just-right":
+            // Hold the load, let the reps creep up.
+            return item.prescription.reps !== undefined
+              ? { ...item, prescription: bumpReps(item.prescription, 1) }
+              : { ...item, prescription: bumpDuration(item.prescription, 5) };
 
-        case "too-easy": {
-          if (!exercise) return item;
+          case "too-easy": {
+            if (!exercise) return item;
 
-          if (method === "chain") {
-            // Prefer moving up the ladder; that is real progression, where an
-            // extra set of the same easy movement is mostly just more time.
-            const harder = stepChain(library, exercise, 1, ctx);
-            if (harder) {
-              return {
-                ...item,
-                exerciseId: harder.id,
-                prescription: {
-                  ...item.prescription,
-                  reps:
-                    item.prescription.reps !== undefined
-                      ? (harder.defaults.reps ?? item.prescription.reps)
-                      : undefined,
-                  durationSec:
-                    item.prescription.durationSec !== undefined
-                      ? (harder.defaults.durationSec ?? item.prescription.durationSec)
-                      : undefined,
-                },
-              };
+            if (method === "chain") {
+              // Prefer moving up the ladder; that is real progression, where an
+              // extra set of the same easy movement is mostly just more time.
+              const harder = stepChain(library, exercise, 1, ctx);
+              if (harder) {
+                return {
+                  ...item,
+                  exerciseId: harder.id,
+                  prescription: {
+                    ...item.prescription,
+                    reps:
+                      item.prescription.reps !== undefined
+                        ? (harder.defaults.reps ?? item.prescription.reps)
+                        : undefined,
+                    durationSec:
+                      item.prescription.durationSec !== undefined
+                        ? (harder.defaults.durationSec ?? item.prescription.durationSec)
+                        : undefined,
+                  },
+                };
+              }
             }
-          }
 
-          if (method === "duration" || item.prescription.durationSec !== undefined) {
-            return { ...item, prescription: bumpDuration(item.prescription, 10) };
-          }
-
-          if (method === "reps-then-load") {
-            return repsThenLoad(item, exercise, window);
-          }
-
-          if (method === "load") {
-            // Where there is a bar to load, load it: keep the reps and move the
-            // weight, which is what the Complete screen promises and what the
-            // tier exists to express.
-            const known = item.prescription.targetWeightKg ?? null;
-            if (known !== null) {
-              return {
-                ...item,
-                prescription: bumpWeight(
-                  item.prescription,
-                  known,
-                  loadStepKg(exercise.mechanic)
-                ),
-              };
+            if (method === "duration" || item.prescription.durationSec !== undefined) {
+              return { ...item, prescription: bumpDuration(item.prescription, 10) };
             }
-            // Nothing logged yet, so there is no load to add to. Reps until
-            // there is -- and the Complete screen says so rather than promising
-            // a weight change that cannot happen.
+
+            if (method === "reps-then-load") {
+              return repsThenLoad(item, exercise, window);
+            }
+
+            if (method === "load") {
+              // Where there is a bar to load, load it: keep the reps and move the
+              // weight, which is what the Complete screen promises and what the
+              // tier exists to express.
+              const known = item.prescription.targetWeightKg ?? null;
+              if (known !== null) {
+                return {
+                  ...item,
+                  prescription: bumpWeight(
+                    item.prescription,
+                    known,
+                    loadStepKg(exercise.mechanic)
+                  ),
+                };
+              }
+              // Nothing logged yet, so there is no load to add to. Reps until
+              // there is -- and the Complete screen says so rather than promising
+              // a weight change that cannot happen.
+              return { ...item, prescription: bumpReps(item.prescription, 2) };
+            }
+
+            // The design's wording: add a set to the compound lifts.
+            if (exercise.mechanic === "compound") {
+              return { ...item, prescription: bumpSets(item.prescription, 1) };
+            }
             return { ...item, prescription: bumpReps(item.prescription, 2) };
           }
 
-          // The design's wording: add a set to the compound lifts.
-          if (exercise.mechanic === "compound") {
-            return { ...item, prescription: bumpSets(item.prescription, 1) };
-          }
-          return { ...item, prescription: bumpReps(item.prescription, 2) };
+          default:
+            return assertNever(feel);
         }
+      }),
+    };
+  });
 
-        default:
-          return assertNever(feel);
-      }
-    }),
-  }));
-
-  return { ...plan, days, week: plan.week + 1, updatedAt: now };
+  const rotated = dayIndex === plan.days.length - 1;
+  return { ...plan, days, week: rotated ? plan.week + 1 : plan.week, updatedAt: now };
 }
 
 /**
