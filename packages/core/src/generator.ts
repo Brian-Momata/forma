@@ -278,52 +278,70 @@ function fitDay(
   const withExercises = (xs: PlanExercise[]): PlanDay => ({ ...day, exercises: xs });
   const cost = (xs: PlanExercise[]): number => estimateDaySeconds(withExercises(xs));
 
-  // 1. Trim sets, most expensive first, down to each item's floor.
-  let guard = 64;
-  while (cost(exercises) > budgetSec && guard-- > 0) {
-    let target = -1;
-    let worst = 0;
-    exercises.forEach((item, i) => {
-      if (item.warmup || item.prescription.sets <= floorFor(item)) return;
-      const c = estimateExerciseSeconds(item.prescription);
-      if (c > worst) {
-        worst = c;
-        target = i;
-      }
-    });
-    if (target < 0) break;
-    const item = exercises[target];
-    if (!item) break;
-    exercises[target] = {
-      ...item,
-      prescription: { ...item.prescription, sets: item.prescription.sets - 1 },
-    };
-  }
-
-  // 2. Only now start removing work, accessories first and from the end.
-  guard = 32;
-  while (cost(exercises) > budgetSec && guard-- > 0) {
-    const working = exercises.filter((e) => !e.warmup);
-    if (working.length <= 2) break;
-    let target = -1;
-    for (let i = exercises.length - 1; i >= 0; i--) {
-      const item = exercises[i];
-      if (item && !item.warmup && roles.get(item.exerciseId) === "accessory") {
-        target = i;
-        break;
-      }
+  // Trims sets, most expensive first, down to `floor` for each item.
+  const trimSets = (floor: (item: PlanExercise) => number): void => {
+    let guard = 64;
+    while (cost(exercises) > budgetSec && guard-- > 0) {
+      let target = -1;
+      let worst = 0;
+      exercises.forEach((item, i) => {
+        if (item.warmup || item.prescription.sets <= floor(item)) return;
+        const c = estimateExerciseSeconds(item.prescription);
+        if (c > worst) {
+          worst = c;
+          target = i;
+        }
+      });
+      if (target < 0) break;
+      const item = exercises[target];
+      if (!item) break;
+      exercises[target] = {
+        ...item,
+        prescription: { ...item.prescription, sets: item.prescription.sets - 1 },
+      };
     }
-    if (target < 0) {
+  };
+
+  // Removes working movements, accessories first and from the end, while at
+  // least `keep` would remain.
+  const dropExercises = (keep: number): void => {
+    let guard = 32;
+    while (cost(exercises) > budgetSec && guard-- > 0) {
+      const working = exercises.filter((e) => !e.warmup);
+      if (working.length <= keep) break;
+      let target = -1;
       for (let i = exercises.length - 1; i >= 0; i--) {
-        if (!exercises[i]?.warmup) {
+        const item = exercises[i];
+        if (item && !item.warmup && roles.get(item.exerciseId) === "accessory") {
           target = i;
           break;
         }
       }
+      if (target < 0) {
+        for (let i = exercises.length - 1; i >= 0; i--) {
+          if (!exercises[i]?.warmup) {
+            target = i;
+            break;
+          }
+        }
+      }
+      if (target < 0) break;
+      exercises = exercises.filter((_, i) => i !== target);
     }
-    if (target < 0) break;
-    exercises = exercises.filter((_, i) => i !== target);
-  }
+  };
+
+  // 1. Trim sets down to each item's floor.
+  trimSets(floorFor);
+
+  // 2. Only now start removing work, down to two movements.
+  dropExercises(2);
+
+  // 2b. The budget is a ceiling, not a target (ENGINEERING.md §8), so a session
+  //     still over it at two movements gives up sets past the floor rather than
+  //     running long: in ten minutes, two movements for one set each beats one
+  //     movement for two. Only if that is still too much does it go to one.
+  trimSets(() => 1);
+  dropExercises(1);
 
   // 3. Someone who asked for 30 minutes should not be handed 12. Add sets back
   //    while the budget allows, cheapest first, up to a ceiling.

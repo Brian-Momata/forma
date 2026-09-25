@@ -131,6 +131,24 @@ describe("plan generation is total and honest", () => {
     );
   });
 
+  it("fits a short session by trimming sets before it gives up on the budget", () => {
+    // Found by the property above on CI: two movements at their two-set floor
+    // came to 603s of a 600s session, and the fitter stopped there. A session
+    // this short should do fewer sets, not run over.
+    const profile = makeProfile({
+      goal: "endurance",
+      experience: "new",
+      schedule: { daysPerWeek: 2, minutesPerSession: 10 },
+    });
+    const setup = makeSetup({ equipment: ["rack", "bench"] });
+    const plan = generatePlan(library, profile, setup);
+    for (const day of plan.days) {
+      expect(estimateDaySeconds(day)).toBeLessThanOrEqual(600);
+      // Both movements survive: fewer sets is the better cut.
+      expect(day.exercises.filter((e) => !e.warmup).length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
   it("is deterministic: the same answers always give the same plan", () => {
     fc.assert(
       fc.property(arbProfile, arbSetup, (profile, setup) => {
