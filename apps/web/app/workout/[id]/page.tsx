@@ -59,12 +59,17 @@ function WorkoutScreen() {
       // An interrupted session is resumed rather than restarted -- state
       // recomputes from its stored timestamps, so nothing is lost.
       const saved = await readCheckpoint<SessionCheckpoint>();
+      // A finished session nobody rated yet is not overwritten by a new one:
+      // its feedback is what moves the plan on, so it is asked for first.
+      if (saved?.player.phase === "complete") {
+        router.replace(`/workout/${saved.meta.planId}/complete`);
+        return;
+      }
       const age = saved ? Date.now() - saved.player.startedAt : Infinity;
       if (
         saved &&
         saved.meta.planId === planId &&
         saved.meta.dayIndex === dayIndex &&
-        saved.player.phase !== "complete" &&
         // A session left open overnight is not one you are still in the middle
         // of. Resuming it would reuse its row and report a workout that lasted
         // two days.
@@ -94,7 +99,7 @@ function WorkoutScreen() {
         { autoAdvance: profile.autoAdvance, restOverrideSec: profile.restOverrideSec }
       );
     })();
-  }, [ready, library, profile, plan, planId, dayIndex, begin, restore]);
+  }, [ready, library, profile, plan, planId, dayIndex, begin, restore, router]);
 
   // Nobody trains before acknowledging what the app is and is not.
   useEffect(() => {
@@ -162,8 +167,8 @@ function WorkoutScreen() {
           <div className="mt-8 flex flex-col gap-3">
             <PillButton
               onClick={() => {
-                abandon();
-                router.replace(`/workout/${planId}/complete`);
+                // Nothing done means nothing to rate, so straight home.
+                router.replace(abandon() ? `/workout/${planId}/complete` : "/");
               }}
             >
               End and save

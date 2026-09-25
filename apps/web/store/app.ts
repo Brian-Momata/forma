@@ -172,7 +172,8 @@ export const useApp = create<AppStore>((set, get) => ({
     const { library, profile, setups } = get();
     if (!library || !profile) return;
     for (const setup of setups) {
-      await regenerateSetupPlans(library, profile, setup);
+      // Rebuild only: a setup with no plans left is not asking for a new one.
+      await regenerateSetupPlans(library, profile, setup, { createFirst: false });
     }
     await get().refresh();
   },
