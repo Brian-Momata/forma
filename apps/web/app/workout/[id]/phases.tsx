@@ -21,6 +21,7 @@ import {
 
 import { Display, Kicker, PillButton, ProgressBar, Screen, Segments, Sheet } from "@/components/ui";
 import { MediaWell } from "@/components/ui/media";
+import { displayWeight, stepWeight } from "@/lib/weight";
 import { useSession } from "@/store/session";
 
 /* ---------------------------------------------------------------------------
@@ -141,10 +142,7 @@ function WeightControl({ item, unit }: { item: PlayerItem; unit: "kg" | "lb" }) 
   const weightKg = useSession((s) => s.player?.weightKg ?? null);
   const setWeight = useSession((s) => s.setWeight);
 
-  const toDisplay = (kg: number) => (unit === "lb" ? kg * 2.2046226 : kg);
-  const step = unit === "lb" ? 1.1023113 : 0.5;
-
-  const shown = weightKg === null ? null : Math.round(toDisplay(weightKg) * 2) / 2;
+  const shown = weightKg === null ? null : displayWeight(weightKg, unit);
 
   return (
     <div className="mt-3 flex items-center gap-2">
@@ -153,7 +151,7 @@ function WeightControl({ item, unit }: { item: PlayerItem; unit: "kg" | "lb" }) 
         <button
           type="button"
           aria-label="Less weight"
-          onClick={() => setWeight(Math.max(0, (weightKg ?? 0) - step * 2))}
+          onClick={() => setWeight(stepWeight(weightKg, unit, -1))}
           className="h-8 w-8 text-[15px] text-t3 hover:text-acc"
         >
           −
@@ -164,7 +162,7 @@ function WeightControl({ item, unit }: { item: PlayerItem; unit: "kg" | "lb" }) 
         <button
           type="button"
           aria-label="More weight"
-          onClick={() => setWeight((weightKg ?? 0) + step * 2)}
+          onClick={() => setWeight(stepWeight(weightKg, unit, 1))}
           className="h-8 w-8 text-[15px] text-t3 hover:text-acc"
         >
           +
@@ -176,7 +174,7 @@ function WeightControl({ item, unit }: { item: PlayerItem; unit: "kg" | "lb" }) 
           onClick={() => setWeight(item.targetWeightKg)}
           className="text-[11.5px] font-semibold text-t4 underline underline-offset-4 hover:text-acc"
         >
-          Plan says {Math.round(toDisplay(item.targetWeightKg) * 2) / 2} {unit}
+          Plan says {displayWeight(item.targetWeightKg, unit)} {unit}
         </button>
       )}
     </div>
